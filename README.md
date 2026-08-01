@@ -47,6 +47,7 @@ entered with, so an old `D` never silently changes meaning.
 | `conflicts` | Which pairs of readings disagree, and by how much |
 | `delete N` | Drop reading #N — ids are stable and never shift |
 | `estimate` / `tracks` | Re-solve without adding anything |
+| `output [file]` | Write the whole board to a text file |
 | `found x y z` / `x y z found` | Confirm a kill (see below) |
 | `reset` | Wipe everything |
 | `relic <spec>` / `bands` | Change relic / show the band table |
@@ -93,6 +94,26 @@ A fresh reading that contradicts four old ones lands near the bottom on its own.
 second fresh reading that agrees with it and both climb while the four older ones slide,
 because the two newest weights dominate the sum. That's deliberate — if you've walked to
 a different skeleton, the newest readings are the ones describing where you actually are.
+
+### Export
+
+`output` writes the whole board to a text file — `output` for a timestamped name in the
+current directory, or `output myfile` for a specific one. It re-solves first, so the file
+always carries current numbers rather than whatever the last estimate left behind.
+
+The report holds the band table, every reading with its track and confidence, the
+conflict list, and each track's estimate, region, search-space percentage and pockets —
+plus a **tab-separated block** that pastes straight into a spreadsheet:
+
+```
+id	x	y	z	band	min	max	track	confidence	relic
+1	0	-1319	-200	C	51	100	1	0.771	Repaired Ghost Seek
+6	1900	-500	2000	F	201		2	1	Repaired Ghost Seek
+```
+
+An empty `max` means the reading was silent, so there's no upper bound. The file is
+plain ASCII, UTF-8 without a BOM, and every number is invariant-culture — so it parses
+the same everywhere, the same way the program parses your input.
 
 ### Found
 

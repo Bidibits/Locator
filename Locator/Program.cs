@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace SpawnLocator
 {
@@ -40,7 +42,7 @@ namespace SpawnLocator
             AskForRelic();
 
             Ui.Line("Enter readings as:  x y z letter        e.g.  120 64 -30 C");
-            Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z");
+            Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z | output");
             Ui.Line("          starttimer | ping | stoptimer | relic | bands | metric | reset | help | exit");
             Ui.Line();
 
@@ -118,6 +120,12 @@ namespace SpawnLocator
 
                 case "conflicts":
                     ListConflicts();
+                    return true;
+
+                case "output":
+                case "export":
+                case "save":
+                    WriteReport(tokens.Skip(1));
                     return true;
 
                 case "tracks":
@@ -552,6 +560,48 @@ namespace SpawnLocator
             }
         }
 
+        // ---------- export ----------
+
+        static void WriteReport(IEnumerable<string> rest)
+        {
+            string name = string.Join(" ", rest).Trim().Trim('"');
+            if (name.Length == 0)
+                name = $"locator-{DateTime.Now:yyyyMMdd-HHmmss}.txt";
+            else if (!Path.HasExtension(name))
+                name += ".txt";
+
+            string path;
+            try
+            {
+                path = Path.GetFullPath(name);
+            }
+            catch (Exception ex)
+            {
+                Ui.Line($"That isn't a usable filename: {ex.Message}", ConsoleColor.Yellow);
+                return;
+            }
+
+            // Solve before reporting so the file carries the same numbers the screen would,
+            // rather than whatever was left over from the last estimate.
+            var tracks = Analysis.BuildTracks(readings, metric);
+            foreach (var t in tracks) t.Result = Solver.Solve(t.Readings, metric);
+
+            string report = Export.BuildReport(relic, metric, readings, tracks, BaselineFor);
+
+            try
+            {
+                File.WriteAllText(path, report, new UTF8Encoding(false));
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                Ui.Line($"Couldn't write that file: {ex.Message}", ConsoleColor.Yellow);
+                return;
+            }
+
+            Ui.Line($"Wrote {readings.Count} reading(s) and {tracks.Count} track(s) to:", ConsoleColor.Green);
+            Ui.Line($"  {path}");
+        }
+
         // ---------- timer ----------
 
         static void StartTimer(string[] tokens)
@@ -588,6 +638,7 @@ namespace SpawnLocator
             Ui.Line("  conflicts            which pairs of readings disagree, and by how much");
             Ui.Line("  delete N             drop reading #N (ids are stable, they never shift)");
             Ui.Line("  estimate / tracks    re-solve without adding anything");
+            Ui.Line("  output [file]        write the whole board to a text file (default: timestamped)");
             Ui.Line("  reset                wipe everything");
             Ui.Line();
             Ui.Line("Finding one", ConsoleColor.Cyan);
