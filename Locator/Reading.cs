@@ -20,11 +20,14 @@ namespace SpawnLocator
         public double MinDist, MaxDist;
         public char Letter;
         public string RelicName = "";
+        public DateTime Timestamp;      // wall-clock moment the reading was entered
 
         public bool IsSilent => double.IsPositiveInfinity(MaxDist);
 
         public string BandText => IsSilent ? $"{MinDist:0}+ (silent)" : $"{MinDist:0}-{MaxDist:0}";
         public string PosText => $"({X:0.#}, {Y:0.#}, {Z:0.#})";
+        public string TimeText => Timestamp.ToString("HH:mm:ss");
+        public string FullTimeText => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
 
         public double DistanceTo(double x, double y, double z, DistanceMetric metric)
         {

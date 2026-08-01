@@ -284,11 +284,12 @@ namespace SpawnLocator
                 MinDist = band.Min,
                 MaxDist = band.Max,
                 Letter = band.Letter,
-                RelicName = relic.Name
+                RelicName = relic.Name,
+                Timestamp = DateTime.Now
             };
             readings.Add(reading);
 
-            Ui.Line($"Added #{reading.Seq}: {reading.PosText}  {band.Letter} -> {band.RangeText}");
+            Ui.Line($"Added #{reading.Seq} @ {reading.TimeText}: {reading.PosText}  {band.Letter} -> {band.RangeText}");
             Estimate();
         }
 
@@ -327,11 +328,11 @@ namespace SpawnLocator
                 foreach (var r in t.Readings) trackOf[r.Seq] = t.Index;
 
             Ui.Line();
-            Ui.Line($"  {"id",-4} {"position",-26} {"band",-4} {"range",-15} {"track",-6} confidence");
+            Ui.Line($"  {"id",-4} {"time",-9} {"position",-26} {"band",-4} {"range",-15} {"track",-6} confidence");
             foreach (var r in readings.OrderBy(r => r.Seq))
             {
                 double c = conf[r.Seq];
-                Ui.Raw($"  #{r.Seq,-3} {r.PosText,-26} {r.Letter,-4} {r.BandText,-15} {trackOf[r.Seq],-6} ");
+                Ui.Raw($"  #{r.Seq,-3} {r.TimeText,-9} {r.PosText,-26} {r.Letter,-4} {r.BandText,-15} {trackOf[r.Seq],-6} ");
                 lock (Ui.Gate)
                 {
                     var prev = Console.ForegroundColor;

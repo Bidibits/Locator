@@ -97,18 +97,23 @@ a different skeleton, the newest readings are the ones describing where you actu
 
 ### Export
 
+Every reading records the wall-clock moment it was entered — shown as `HH:mm:ss` in
+`list`, and as a full timestamp in the export.
+
 `output` writes the whole board to a text file — `output` for a timestamped name in the
 current directory, or `output myfile` for a specific one. It re-solves first, so the file
 always carries current numbers rather than whatever the last estimate left behind.
 
-The report holds the band table, every reading with its track and confidence, the
-conflict list, and each track's estimate, region, search-space percentage and pockets —
-plus a **tab-separated block** that pastes straight into a spreadsheet:
+The report holds the band table, every reading with its timestamp, track and confidence,
+the conflict list, and each track's estimate, region, search-space percentage and **every**
+pocket (the on-screen `estimate` caps the pocket list at 4 to fit the terminal; the file
+doesn't cap anything) — plus a **tab-separated block** that pastes straight into a
+spreadsheet:
 
 ```
-id	x	y	z	band	min	max	track	confidence	relic
-1	0	-1319	-200	C	51	100	1	0.771	Repaired Ghost Seek
-6	1900	-500	2000	F	201		2	1	Repaired Ghost Seek
+id	timestamp	x	y	z	band	min	max	track	confidence	relic
+1	2026-08-01 22:34:24	0	-1319	-200	C	51	100	1	0.771	Repaired Ghost Seek
+6	2026-08-01 22:41:09	1900	-500	2000	F	201		2	1	Repaired Ghost Seek
 ```
 
 An empty `max` means the reading was silent, so there's no upper bound. The file is

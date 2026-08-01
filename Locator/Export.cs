@@ -66,11 +66,11 @@ namespace SpawnLocator
                                    Dictionary<int, double> conf, Dictionary<int, int> trackOf)
         {
             sb.AppendLine($"--- Readings ({readings.Count}) ---");
-            sb.AppendLine($"  {"id",-5} {"x",10} {"y",10} {"z",10}  {"band",-5} {"range",-14} {"track",-6} conf");
+            sb.AppendLine($"  {"id",-5} {"entered",-20} {"x",10} {"y",10} {"z",10}  {"band",-5} {"range",-14} {"track",-6} conf");
             foreach (var r in readings.OrderBy(r => r.Seq))
             {
                 sb.AppendLine(
-                    $"  {"#" + r.Seq,-5} {r.X.ToString("0.##", Inv),10} {r.Y.ToString("0.##", Inv),10} {r.Z.ToString("0.##", Inv),10}"
+                    $"  {"#" + r.Seq,-5} {r.FullTimeText,-20} {r.X.ToString("0.##", Inv),10} {r.Y.ToString("0.##", Inv),10} {r.Z.ToString("0.##", Inv),10}"
                   + $"  {r.Letter,-5} {r.BandText,-14} {trackOf[r.Seq],-6} {(conf[r.Seq] * 100).ToString("0", Inv)}%");
             }
             sb.AppendLine();
@@ -80,12 +80,13 @@ namespace SpawnLocator
                               Dictionary<int, double> conf, Dictionary<int, int> trackOf)
         {
             sb.AppendLine("--- Tab-separated (paste into a spreadsheet) ---");
-            sb.AppendLine("id\tx\ty\tz\tband\tmin\tmax\ttrack\tconfidence\trelic");
+            sb.AppendLine("id\ttimestamp\tx\ty\tz\tband\tmin\tmax\ttrack\tconfidence\trelic");
             foreach (var r in readings.OrderBy(r => r.Seq))
             {
                 string max = r.IsSilent ? "" : r.MaxDist.ToString("0.##", Inv);
                 sb.AppendLine(string.Join("\t",
                     r.Seq.ToString(Inv),
+                    r.Timestamp.ToString("yyyy-MM-dd HH:mm:ss", Inv),
                     r.X.ToString("0.##", Inv),
                     r.Y.ToString("0.##", Inv),
                     r.Z.ToString("0.##", Inv),
@@ -174,7 +175,7 @@ namespace SpawnLocator
             {
                 sb.AppendLine($"  Pockets           {r.Blobs.Count} separated regions,"
                             + $" {Solver.Separation(r.Blobs[0], r.Blobs[1]).ToString("0", Inv)} blocks apart at the widest");
-                for (int i = 0; i < r.Blobs.Count && i < 4; i++)
+                for (int i = 0; i < r.Blobs.Count; i++)
                 {
                     var b = r.Blobs[i];
                     sb.AppendLine($"    pocket {i + 1}  ({b.Cx.ToString("0.#", Inv)}, {b.Cy.ToString("0.#", Inv)}, {b.Cz.ToString("0.#", Inv)})"
