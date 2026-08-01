@@ -1,344 +1,612 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 
 namespace SpawnLocator
 {
-    enum DistanceMetric
-    {
-        Chebyshev,  // "blocky": distance = max(|dx|,|dy|,|dz|) -> rings are cube shells
-        Euclidean   // classic straight-line distance -> rings are sphere shells
-    }
-
-    struct Reading
-    {
-        public double X, Y, Z;
-        public double MinDist, MaxDist;
-        public string Range;
-    }
-
     class Program
     {
-        static List<Reading> readings = new List<Reading>();
-        static bool haveLastEstimate = false;
-        static double lastEstX, lastEstY, lastEstZ;
+        static readonly List<Reading> readings = new List<Reading>();
+        static readonly PingTimer timer = new PingTimer();
+
+        static RelicTier relic = Relics.Repaired;
+        static int nextSeq = 1;
+
+        // Part 2 baseline: what a single reading allows on its own, cached per reading id.
+        // Each track measures against its OWN oldest reading, so every hunt starts at 100%
+        // and falls from there - a second skeleton's track isn't scored against the first's.
+        // A solo solve never changes unless the metric does, hence the cache.
+        static readonly Dictionary<int, double> soloVolumeCache = new Dictionary<int, double>();
+
         // Confirmed against real in-game data: distance behaves as straight-line (Euclidean),
-        // not blocky/cube-shell (Chebyshev). See the black/gray/yellow/green/blue calibration below.
+        // not blocky/cube-shell (Chebyshev). Calibrated against a known origin point with the
+        // Repaired (Grade II) relic, whose bands are A 0-25, B 26-50, C 51-100, D 101-150,
+        // E 151-200, F silent:
+        //   B readings landed at ~26-28    -> matches B (26-50)
+        //   C reading landed at ~100.04    -> matches C (51-100)
+        //   D readings landed at ~101-105  -> matches D (101-150)
         static DistanceMetric metric = DistanceMetric.Euclidean;
-
-        // Range -> (min, max) distance band, inclusive.
-        // Confirmed from real readings against a known origin point:
-        //   green readings landed at ~26-28   -> matches D (26-50)
-        //   yellow reading landed at ~100.04  -> matches C (51-100)
-        //   gray readings landed at ~101-105  -> matches B (101-150)
-        static readonly Dictionary<string, (double min, double max)> Bands = new()
-        {
-            ["farfar"] = (151, 200),
-            ["far"] = (101, 150),
-            ["near"] = (51, 100),
-            ["close"] = (26, 50),
-            ["closest"] = (0, 25),
-            ["nothing"] = (201, double.PositiveInfinity), // out of detection range entirely
-        };
-
-        // Target sample count for the grid search. Bigger = more precise, slower.
-        const long TargetSamples = 2_000_000;
 
         static void Main()
         {
-            Console.WriteLine("=== Spawn Locator ===");
-            Console.WriteLine("Enter readings as:  x y z range        e.g.  120 64 -30 near");
-            Console.WriteLine("Distance bands -> farfar:151-250  far:101-150  near:51-100  close:26-50  closest:0-25  nothing:201+");
-            Console.WriteLine($"Current distance metric: {metric} (type 'metric chebyshev' or 'metric euclidean' to change)");
-            Console.WriteLine("Other commands: list | estimate | delete N | found | reset | help | exit");
-            Console.WriteLine();
+            Console.OutputEncoding = System.Text.Encoding.UTF8;
+            try { Console.Title = "Ghost Seek Locator"; } catch { }
+
+            Ui.Line("=== Ghost Seek Locator ===", ConsoleColor.Cyan);
+            Ui.Line("Triangulates a Praying Skeleton from Ghost Seek relic sound readings.");
+            Ui.Line();
+
+            AskForRelic();
+
+            Ui.Line("Enter readings as:  x y z letter        e.g.  120 64 -30 C");
+            Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z");
+            Ui.Line("          starttimer | ping | stoptimer | relic | bands | metric | reset | help | exit");
+            Ui.Line();
 
             while (true)
             {
-                Console.Write("> ");
+                Ui.Raw("> ");
                 string? line = Console.ReadLine();
                 if (line == null) break;
                 line = line.Trim();
-                if (line.Length == 0) continue;
 
-                var tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
-
-                if (tokens[0].Equals("exit", StringComparison.OrdinalIgnoreCase) ||
-                    tokens[0].Equals("quit", StringComparison.OrdinalIgnoreCase))
+                // Bare Enter while the countdown runs is the fastest way to log a sound:
+                // you hear it, you hit Enter.
+                if (line.Length == 0)
                 {
+                    if (timer.Running) Ui.Line("  " + timer.Ping(), ConsoleColor.DarkCyan);
+                    continue;
+                }
+
+                if (!Dispatch(line)) break;
+            }
+
+            timer.Stop();
+        }
+
+        // Returns false to quit.
+        static bool Dispatch(string line)
+        {
+            var tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            string head = tokens[0].ToLowerInvariant();
+
+            // "x y z found" has to be checked before the plain 4-token reading form.
+            if (tokens.Length == 4 && tokens[3].Equals("found", StringComparison.OrdinalIgnoreCase))
+            {
+                HandleFound(tokens[0], tokens[1], tokens[2]);
+                return true;
+            }
+
+            switch (head)
+            {
+                case "exit":
+                case "quit":
+                    return false;
+
+                case "help":
+                    PrintHelp();
+                    return true;
+
+                case "bands":
+                    Relics.PrintTable(relic);
+                    return true;
+
+                case "relic":
+                case "tier":
+                case "seeker":
+                case "seek":
+                    ChangeRelic(tokens.Skip(1));
+                    return true;
+
+                case "reset":
+                    readings.Clear();
+                    soloVolumeCache.Clear();
+                    nextSeq = 1;
+                    Ui.Line("All readings cleared.");
+                    return true;
+
+                case "found":
+                    if (tokens.Length == 4) HandleFound(tokens[1], tokens[2], tokens[3]);
+                    else if (tokens.Length == 1) ClearEverythingAsFound();
+                    else Ui.Line("Usage: found x y z   (or 'x y z found', or bare 'found' to wipe the board)");
+                    return true;
+
+                case "list":
+                    ListReadings();
+                    return true;
+
+                case "conflicts":
+                    ListConflicts();
+                    return true;
+
+                case "tracks":
+                case "estimate":
+                    Estimate();
+                    return true;
+
+                case "delete":
+                case "remove":
+                    DeleteReading(tokens);
+                    return true;
+
+                case "metric":
+                    ChangeMetric(tokens);
+                    return true;
+
+                case "starttimer":
+                case "timerstart":
+                    StartTimer(tokens);
+                    return true;
+
+                case "ping":
+                case "heard":
+                    Ui.Line("  " + timer.Ping(), ConsoleColor.DarkCyan);
+                    return true;
+
+                case "stoptimer":
+                case "timerstop":
+                    timer.Stop();
+                    Ui.Line("Timer stopped.");
+                    return true;
+
+                case "timer":
+                    Ui.Line("  " + timer.Status());
+                    return true;
+            }
+
+            if (tokens.Length == 4) TryAddReading(tokens);
+            else Ui.Line("Didn't understand that. Type 'help' for usage.");
+
+            return true;
+        }
+
+        // ---------- relic selection ----------
+
+        static void AskForRelic()
+        {
+            Ui.Line("Which Ghost Seek are you using?");
+            Relics.PrintChoices();
+            Ui.Line("Type a grade (g1 / gii / tier3 / 2) or a name (refined).");
+
+            while (true)
+            {
+                Ui.Raw("relic> ");
+                string? input = Console.ReadLine();
+                if (input == null) { relic = Relics.Repaired; break; }
+
+                input = input.Trim();
+                if (input.Length == 0)
+                {
+                    Ui.Line($"  Defaulting to {Relics.Repaired.Label}.", ConsoleColor.DarkGray);
+                    relic = Relics.Repaired;
                     break;
                 }
-                else if (tokens[0].Equals("help", StringComparison.OrdinalIgnoreCase))
-                {
-                    PrintHelp();
-                }
-                else if (tokens[0].Equals("reset", StringComparison.OrdinalIgnoreCase))
-                {
-                    readings.Clear();
-                    haveLastEstimate = false;
-                    Console.WriteLine("All readings cleared.");
-                }
-                else if (tokens[0].Equals("found", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (tokens.Length == 4 &&
-                        double.TryParse(tokens[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double fx) &&
-                        double.TryParse(tokens[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double fy) &&
-                        double.TryParse(tokens[3], NumberStyles.Float, CultureInfo.InvariantCulture, out double fz))
-                    {
-                        if (haveLastEstimate)
-                        {
-                            double err = Math.Sqrt(Math.Pow(fx - lastEstX, 2) + Math.Pow(fy - lastEstY, 2) + Math.Pow(fz - lastEstZ, 2));
-                            Console.WriteLine($"Found at ({fx},{fy},{fz}) - estimate was off by {err:0.#} blocks. Nice.");
-                        }
-                        else
-                        {
-                            Console.WriteLine($"Found at ({fx},{fy},{fz}). Logged.");
-                        }
-                    }
-                    else if (tokens.Length > 1)
-                    {
-                        Console.WriteLine("To log where you found it: found x y z   (or just 'found' with no coords)");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Got it - marking this one found.");
-                    }
 
-                    readings.Clear();
-                    haveLastEstimate = false;
-                    Console.WriteLine("Starting fresh for the next item. Enter readings whenever you're ready.");
-                }
-                else if (tokens[0].Equals("list", StringComparison.OrdinalIgnoreCase))
+                var parsed = Relics.Parse(input);
+                if (parsed == null)
                 {
-                    ListReadings();
+                    Ui.Line("  Didn't recognise that. Try: g1, g2, g3, gi, gii, giii, tier1, 2, makeshift, repaired, refined.", ConsoleColor.Yellow);
+                    continue;
                 }
-                else if ((tokens[0].Equals("delete", StringComparison.OrdinalIgnoreCase) ||
-                          tokens[0].Equals("remove", StringComparison.OrdinalIgnoreCase)))
-                {
-                    if (tokens.Length != 2 || !int.TryParse(tokens[1], out int delIndex))
-                    {
-                        Console.WriteLine("Usage: delete N   (N is the reading number shown by 'list')");
-                    }
-                    else if (delIndex < 1 || delIndex > readings.Count)
-                    {
-                        Console.WriteLine($"No reading #{delIndex}. There are {readings.Count} reading(s) - use 'list' to see them.");
-                    }
-                    else
-                    {
-                        var removed = readings[delIndex - 1];
-                        readings.RemoveAt(delIndex - 1);
-                        Console.WriteLine($"Removed #{delIndex}: ({removed.X},{removed.Y},{removed.Z}) range={removed.Range}.");
-                        if (readings.Count > 0) ComputeAndPrintEstimate();
-                        else Console.WriteLine("No readings left.");
-                    }
-                }
-                else if (tokens[0].Equals("estimate", StringComparison.OrdinalIgnoreCase))
-                {
-                    ComputeAndPrintEstimate();
-                }
-                else if (tokens[0].Equals("metric", StringComparison.OrdinalIgnoreCase) && tokens.Length >= 2)
-                {
-                    if (tokens[1].StartsWith("cheb", StringComparison.OrdinalIgnoreCase))
-                    {
-                        metric = DistanceMetric.Chebyshev;
-                        Console.WriteLine("Metric set to Chebyshev (blocky / cube-shell rings).");
-                    }
-                    else if (tokens[1].StartsWith("euc", StringComparison.OrdinalIgnoreCase))
-                    {
-                        metric = DistanceMetric.Euclidean;
-                        Console.WriteLine("Metric set to Euclidean (circular / sphere-shell rings).");
-                    }
-                    else
-                    {
-                        Console.WriteLine("Unknown metric. Use 'metric chebyshev' or 'metric euclidean'.");
-                    }
-                    if (readings.Count > 0) ComputeAndPrintEstimate();
-                }
-                else if (tokens.Length == 4)
-                {
-                    TryAddReading(tokens);
-                }
-                else
-                {
-                    Console.WriteLine("Didn't understand that. Type 'help' for usage.");
-                }
+
+                relic = parsed;
+                break;
             }
+
+            Ui.Line($"Using {relic.Label}.", ConsoleColor.Green);
+            Relics.PrintTable(relic);
         }
 
-        static void PrintHelp()
+        static void ChangeRelic(IEnumerable<string> rest)
         {
-            Console.WriteLine();
-            Console.WriteLine("Add a reading:      x y z range         e.g.  -12 70 305 near");
-            Console.WriteLine("Ranges: closest, close, near, far, farfar, nothing (out of range, 201+)");
-            Console.WriteLine("List readings:       list");
-            Console.WriteLine("Delete a reading:    delete N        (N is the number shown by 'list'; numbers shift after a delete)");
-            Console.WriteLine("Force an estimate:   estimate");
-            Console.WriteLine("Item found:          found            (or 'found x y z' to log the spot and see how close the estimate was)");
-            Console.WriteLine("Clear everything:    reset");
-            Console.WriteLine("Switch distance rule: metric chebyshev | metric euclidean");
-            Console.WriteLine("Quit:                exit");
-            Console.WriteLine();
-            Console.WriteLine("Chebyshev = blocky/square rings (max axis offset). Euclidean = round rings (straight-line distance).");
-            Console.WriteLine();
+            string spec = string.Join(" ", rest).Trim();
+            if (spec.Length == 0)
+            {
+                Ui.Line($"Currently using {relic.Label}.");
+                Relics.PrintTable(relic);
+                return;
+            }
+
+            var parsed = Relics.Parse(spec);
+            if (parsed == null)
+            {
+                Ui.Line("Didn't recognise that relic. Try: g1 / gii / tier3 / makeshift / repaired / refined.", ConsoleColor.Yellow);
+                return;
+            }
+
+            relic = parsed;
+            Ui.Line($"Switched to {relic.Label}.", ConsoleColor.Green);
+            if (readings.Count > 0)
+                Ui.Line($"  Existing {readings.Count} reading(s) keep the distances they were entered with - only new entries use the table below.", ConsoleColor.DarkGray);
+            Relics.PrintTable(relic);
         }
+
+        static void ChangeMetric(string[] tokens)
+        {
+            if (tokens.Length < 2)
+            {
+                Ui.Line($"Current metric: {metric}. Use 'metric chebyshev' or 'metric euclidean'.");
+                return;
+            }
+
+            if (tokens[1].StartsWith("cheb", StringComparison.OrdinalIgnoreCase))
+            {
+                metric = DistanceMetric.Chebyshev;
+                Ui.Line("Metric set to Chebyshev (blocky / cube-shell rings).");
+            }
+            else if (tokens[1].StartsWith("euc", StringComparison.OrdinalIgnoreCase))
+            {
+                metric = DistanceMetric.Euclidean;
+                Ui.Line("Metric set to Euclidean (round / sphere-shell rings).");
+            }
+            else
+            {
+                Ui.Line("Unknown metric. Use 'metric chebyshev' or 'metric euclidean'.");
+                return;
+            }
+
+            soloVolumeCache.Clear();   // solo volumes are metric-dependent
+            if (readings.Count > 0) Estimate();
+        }
+
+        // ---------- readings ----------
 
         static void TryAddReading(string[] tokens)
         {
-            if (!double.TryParse(tokens[0], NumberStyles.Float, CultureInfo.InvariantCulture, out double x) ||
-                !double.TryParse(tokens[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double y) ||
-                !double.TryParse(tokens[2], NumberStyles.Float, CultureInfo.InvariantCulture, out double z))
+            if (!TryCoords(tokens[0], tokens[1], tokens[2], out double x, out double y, out double z))
             {
-                Console.WriteLine("Couldn't parse x/y/z as numbers. Format:  x y z letter");
+                Ui.Line("Couldn't parse x/y/z as numbers. Format:  x y z letter");
                 return;
             }
 
-            string range = tokens[3].Trim().ToLowerInvariant();
-            if (!Bands.ContainsKey(range))
+            string raw = tokens[3].Trim();
+            Band? band = ResolveBand(raw);
+            if (band == null)
             {
-                Console.WriteLine("Range must be one of: closest, close, near, far, farfar, nothing.");
+                string letters = string.Join(" ", relic.Bands.Select(b => b.Letter));
+                Ui.Line($"'{raw}' isn't a band on the {relic.Label}. Valid: {letters} (or 'nothing'). Type 'bands' for the table.", ConsoleColor.Yellow);
                 return;
             }
 
-            var (min, max) = Bands[range];
-            readings.Add(new Reading { X = x, Y = y, Z = z, MinDist = min, MaxDist = max, Range = range });
+            var reading = new Reading
+            {
+                Seq = nextSeq++,
+                X = x, Y = y, Z = z,
+                MinDist = band.Min,
+                MaxDist = band.Max,
+                Letter = band.Letter,
+                RelicName = relic.Name
+            };
+            readings.Add(reading);
 
-            Console.WriteLine($"Added reading #{readings.Count}: pos=({x},{y},{z}) range={range} -> distance {min}-{max}");
-            ComputeAndPrintEstimate();
+            Ui.Line($"Added #{reading.Seq}: {reading.PosText}  {band.Letter} -> {band.RangeText}");
+            Estimate();
+        }
+
+        // Accepts the band letter, or 'nothing'/'none'/'silent'/'x'/'-' for out of range -
+        // so you never have to remember whether silence is E, F or G on this relic.
+        static Band? ResolveBand(string raw)
+        {
+            string s = raw.ToLowerInvariant();
+            if (s == "nothing" || s == "none" || s == "silent" || s == "silence" || s == "x" || s == "-")
+                return relic.Silent;
+
+            if (s.Length == 1 && char.IsLetter(s[0])) return relic.Find(s[0]);
+            return null;
+        }
+
+        static bool TryCoords(string a, string b, string c, out double x, out double y, out double z)
+        {
+            x = y = z = 0;
+            return double.TryParse(a, NumberStyles.Float, CultureInfo.InvariantCulture, out x)
+                && double.TryParse(b, NumberStyles.Float, CultureInfo.InvariantCulture, out y)
+                && double.TryParse(c, NumberStyles.Float, CultureInfo.InvariantCulture, out z);
         }
 
         static void ListReadings()
         {
             if (readings.Count == 0)
             {
-                Console.WriteLine("No readings yet.");
+                Ui.Line("No readings yet.");
                 return;
             }
-            for (int i = 0; i < readings.Count; i++)
+
+            var conf = Analysis.Confidence(readings, metric);
+            var tracks = Analysis.BuildTracks(readings, metric);
+            var trackOf = new Dictionary<int, int>();
+            foreach (var t in tracks)
+                foreach (var r in t.Readings) trackOf[r.Seq] = t.Index;
+
+            Ui.Line();
+            Ui.Line($"  {"id",-4} {"position",-26} {"band",-4} {"range",-15} {"track",-6} confidence");
+            foreach (var r in readings.OrderBy(r => r.Seq))
             {
-                var r = readings[i];
-                Console.WriteLine($"  #{i + 1}: ({r.X},{r.Y},{r.Z}) range={r.Range} -> {r.MinDist}-{r.MaxDist}");
+                double c = conf[r.Seq];
+                Ui.Raw($"  #{r.Seq,-3} {r.PosText,-26} {r.Letter,-4} {r.BandText,-15} {trackOf[r.Seq],-6} ");
+                lock (Ui.Gate)
+                {
+                    var prev = Console.ForegroundColor;
+                    Console.ForegroundColor = Ui.ConfidenceColor(c);
+                    Console.WriteLine($"{Ui.Bar(c, 10)} {c * 100,3:0}%");
+                    Console.ForegroundColor = prev;
+                }
             }
+            Ui.Line();
         }
 
-        // Returns distance between a candidate point and a reading position, per current metric
-        static double Distance(double x, double y, double z, Reading r)
+        static void ListConflicts()
         {
-            double dx = Math.Abs(x - r.X);
-            double dy = Math.Abs(y - r.Y);
-            double dz = Math.Abs(z - r.Z);
+            if (readings.Count < 2)
+            {
+                Ui.Line("Need at least two readings before anything can conflict.");
+                return;
+            }
 
-            if (metric == DistanceMetric.Chebyshev)
-                return Math.Max(dx, Math.Max(dy, dz));
-            else
-                return Math.Sqrt(dx * dx + dy * dy + dz * dz);
+            var pairs = Analysis.Conflicts(readings, metric);
+            if (pairs.Count == 0)
+            {
+                Ui.Line("No conflicts - every reading is compatible with every other.", ConsoleColor.Green);
+                return;
+            }
+
+            Ui.Line();
+            Ui.Line($"{pairs.Count} conflicting pair(s) - no single point can satisfy both halves:", ConsoleColor.Yellow);
+            foreach (var (a, b) in pairs)
+            {
+                double d = a.DistanceTo(b.X, b.Y, b.Z, metric);
+                Ui.Line($"  #{a.Seq} {a.Letter} ({a.BandText})  vs  #{b.Seq} {b.Letter} ({b.BandText})   - they sit {d:0.#} blocks apart");
+            }
+            Ui.Line();
         }
 
-        static void ComputeAndPrintEstimate()
+        static void DeleteReading(string[] tokens)
+        {
+            if (tokens.Length != 2 || !int.TryParse(tokens[1], out int id))
+            {
+                Ui.Line("Usage: delete N   (N is the #id shown by 'list'; ids are stable and never reused)");
+                return;
+            }
+
+            var target = readings.FirstOrDefault(r => r.Seq == id);
+            if (target == null)
+            {
+                Ui.Line($"No reading #{id}. Use 'list' to see what's there.");
+                return;
+            }
+
+            readings.Remove(target);
+            Ui.Line($"Removed #{id}: {target.PosText} {target.Letter}.");
+            if (readings.Count > 0) Estimate();
+            else Ui.Line("No readings left.");
+        }
+
+        // ---------- part 5: found ----------
+
+        static void HandleFound(string sx, string sy, string sz)
+        {
+            if (!TryCoords(sx, sy, sz, out double fx, out double fy, out double fz))
+            {
+                Ui.Line("Couldn't parse those coordinates. Usage: found x y z   (or 'x y z found')");
+                return;
+            }
+
+            // Work out which track was pointing here before anything is removed, so the
+            // accuracy report compares against the estimate that actually led you there.
+            var tracks = Analysis.BuildTracks(readings, metric);
+            var matched = readings.Where(r => r.Satisfies(fx, fy, fz, metric)).ToList();
+
+            Ui.Line();
+            Ui.Line($"Skeleton confirmed at ({fx:0.#}, {fy:0.#}, {fz:0.#}).", ConsoleColor.Green);
+
+            if (matched.Count == 0)
+            {
+                Ui.Line("  None of your readings are consistent with that spot, so nothing was removed.", ConsoleColor.Yellow);
+                Ui.Line("  Either a coordinate is mistyped, or every reading you have describes a different skeleton.");
+                Ui.Line("  Use 'reset' if you want to start clean.");
+                return;
+            }
+
+            var owner = tracks
+                .OrderByDescending(t => t.Readings.Count(r => matched.Contains(r)))
+                .First();
+
+            owner.Result = Solver.Solve(owner.Readings, metric);
+            if (owner.Result.Bounded && owner.Result.Count > 0)
+            {
+                double err = Math.Sqrt(Math.Pow(fx - owner.Result.Cx, 2)
+                                     + Math.Pow(fy - owner.Result.Cy, 2)
+                                     + Math.Pow(fz - owner.Result.Cz, 2));
+                Ui.Line($"  Track {owner.Index} estimated ({owner.Result.Cx:0.#}, {owner.Result.Cy:0.#}, {owner.Result.Cz:0.#}) - off by {err:0.#} blocks.");
+            }
+
+            foreach (var r in matched) readings.Remove(r);
+            Ui.Line($"  Retired {matched.Count} reading(s) that pointed here: {string.Join(" ", matched.Select(r => "#" + r.Seq))}");
+
+            if (readings.Count == 0)
+            {
+                Ui.Line("  Board is clear. Enter readings whenever you're ready for the next one.");
+                return;
+            }
+
+            Ui.Line($"  {readings.Count} reading(s) left over - those were describing something else.", ConsoleColor.Cyan);
+            Estimate();
+        }
+
+        static void ClearEverythingAsFound()
+        {
+            readings.Clear();
+            soloVolumeCache.Clear();
+            nextSeq = 1;
+            Ui.Line("Marked found and wiped every reading. Starting fresh.");
+        }
+
+        // ---------- the estimate ----------
+
+        static void Estimate()
         {
             if (readings.Count == 0)
             {
-                Console.WriteLine("No readings yet - nothing to estimate.");
+                Ui.Line("No readings yet - nothing to estimate.");
                 return;
             }
 
-            // Step 1: intersect the axis-aligned bounding boxes implied by each reading.
-            // For both metrics, "distance <= maxDist" implies the point lies within
-            // [pos - maxDist, pos + maxDist] on every axis, so this bound is valid either way.
-            double minX = double.NegativeInfinity, maxX = double.PositiveInfinity;
-            double minY = double.NegativeInfinity, maxY = double.PositiveInfinity;
-            double minZ = double.NegativeInfinity, maxZ = double.PositiveInfinity;
+            var tracks = Analysis.BuildTracks(readings, metric);
+            foreach (var t in tracks) t.Result = Solver.Solve(t.Readings, metric);
 
-            foreach (var r in readings)
+            Ui.Line();
+            Ui.Line($"[{readings.Count} reading(s) - {relic.Label} - {metric}]", ConsoleColor.DarkGray);
+
+            if (tracks.Count > 1)
             {
-                minX = Math.Max(minX, r.X - r.MaxDist);
-                maxX = Math.Min(maxX, r.X + r.MaxDist);
-                minY = Math.Max(minY, r.Y - r.MaxDist);
-                maxY = Math.Min(maxY, r.Y + r.MaxDist);
-                minZ = Math.Max(minZ, r.Z - r.MaxDist);
-                maxZ = Math.Min(maxZ, r.Z + r.MaxDist);
+                Ui.Line();
+                Ui.Line($"!! Your readings split into {tracks.Count} groups that cannot all describe one skeleton.", ConsoleColor.Yellow);
+                Ui.Line("   Most likely you have picked up two separate spawns. Each group is solved on its own");
+                Ui.Line("   below; 'conflicts' shows exactly which pairs disagree.");
             }
 
-            if (minX > maxX || minY > maxY || minZ > maxZ)
+            foreach (var t in tracks) PrintTrack(t, tracks.Count);
+            Ui.Line();
+        }
+
+        // What the earliest bounded reading of this track allows on its own - the 100% mark
+        // that track's progress is measured against.
+        static double BaselineFor(Track t)
+        {
+            foreach (var r in t.Readings)
             {
-                Console.WriteLine("!! These readings are contradictory - no location satisfies all of them.");
-                Console.WriteLine("   The reading was still added to the dataset (nothing gets thrown away");
-                Console.WriteLine("   automatically). Use 'list' to review everything and 'delete N' to");
-                Console.WriteLine("   remove whichever entry turned out to be wrong.");
-                return;
-            }
+                if (r.IsSilent) continue;   // silence rules points out, it can't bound anything
 
-            if (double.IsInfinity(minX) || double.IsInfinity(maxX) ||
-                double.IsInfinity(minY) || double.IsInfinity(maxY) ||
-                double.IsInfinity(minZ) || double.IsInfinity(maxZ))
-            {
-                Console.WriteLine("Not enough info yet to bound a search area - 'nothing' readings only rule");
-                Console.WriteLine("points OUT, they can't pin a region down by themselves. Add at least one");
-                Console.WriteLine("black/gray/yellow/green/blue reading to establish a boundary.");
-                return;
-            }
-
-            double sizeX = maxX - minX;
-            double sizeY = maxY - minY;
-            double sizeZ = maxZ - minZ;
-            double volume = Math.Max(1, sizeX) * Math.Max(1, sizeY) * Math.Max(1, sizeZ);
-
-            // Step 2: choose a grid step so total sample count stays near TargetSamples
-            double step = Math.Max(1.0, Math.Cbrt(volume / TargetSamples));
-
-            var validPoints = new List<(double x, double y, double z)>();
-
-            for (double x = minX; x <= maxX; x += step)
-            {
-                for (double y = minY; y <= maxY; y += step)
+                if (!soloVolumeCache.TryGetValue(r.Seq, out double v))
                 {
-                    for (double z = minZ; z <= maxZ; z += step)
-                    {
-                        bool ok = true;
-                        foreach (var r in readings)
-                        {
-                            // Round to the nearest whole block: the game reports a rounded
-                            // distance reading, not the raw continuous value, so a true
-                            // distance of e.g. 100.04 should still count as "100" and pass
-                            // a 51-100 band. Comparing the raw float here would wrongly
-                            // reject points that sit within rounding distance of an edge.
-                            double d = Math.Round(Distance(x, y, z, r), MidpointRounding.AwayFromZero);
-                            if (d < r.MinDist || d > r.MaxDist) { ok = false; break; }
-                        }
-                        if (ok) validPoints.Add((x, y, z));
-                    }
+                    var solo = Solver.Solve(new[] { r }, metric);
+                    v = solo.Bounded ? solo.Volume : 0;
+                    soloVolumeCache[r.Seq] = v;
+                }
+                if (v > 0) return v;
+            }
+            return 0;
+        }
+
+        static void PrintTrack(Track t, int trackCount)
+        {
+            var r = t.Result!;
+            var conf = Analysis.Confidence(readings, metric);
+            double avgConf = t.Readings.Average(x => conf[x.Seq]);
+
+            Ui.Line();
+            string header = trackCount > 1
+                ? $"Track {t.Index} - {t.Readings.Count} reading(s): {t.IdList}"
+                : $"Solution - {t.Readings.Count} reading(s): {t.IdList}";
+            Ui.Line(header, trackCount > 1 ? ConsoleColor.Cyan : ConsoleColor.White);
+            Ui.Line($"  Group confidence  {Ui.Bar(avgConf, 10)} {avgConf * 100:0}%");
+
+            if (r.BoxEmpty)
+            {
+                Ui.Line("  These readings are contradictory - no location satisfies all of them.", ConsoleColor.Red);
+                Ui.Line("  Nothing was thrown away; use 'list' and 'delete N' to drop whichever entry was wrong.");
+                return;
+            }
+
+            if (!r.Bounded)
+            {
+                Ui.Line("  Not enough info to bound a search area - silent readings only rule points OUT.", ConsoleColor.Yellow);
+                Ui.Line("  Add at least one reading where you actually heard the relic.");
+                return;
+            }
+
+            if (r.Count == 0)
+            {
+                Ui.Line("  No sampled point satisfied every reading at this resolution.", ConsoleColor.Yellow);
+                Ui.Line("  Either the readings are nearly contradictory, or the valid region is thinner than");
+                Ui.Line("  the grid step - add another reading to shrink the box, which raises resolution.");
+                return;
+            }
+
+            Ui.Line($"  Estimate          ({r.Cx:0.#}, {r.Cy:0.#}, {r.Cz:0.#})", ConsoleColor.Green);
+            Ui.Line($"  Region            X[{r.MinX:0.#}, {r.MaxX:0.#}]  Y[{r.MinY:0.#}, {r.MaxY:0.#}]  Z[{r.MinZ:0.#}, {r.MaxZ:0.#}]");
+
+            double baseline = BaselineFor(t);
+            if (baseline > 0)
+            {
+                double frac = r.Volume / baseline;
+                Ui.Line($"  Search space      {Ui.Bar(frac, 20)} {frac * 100:0.##}% of reading #{t.Readings[0].Seq} alone");
+            }
+            Ui.Line($"                    ~{r.Volume:N0} blocks³   ({r.Count:N0} candidates @ step {r.Step:0.##})", ConsoleColor.DarkGray);
+
+            // Part 3: even a consistent reading set can leave two separated pockets.
+            if (r.Blobs.Count > 1)
+            {
+                var top = r.Blobs.Take(4).ToList();
+                double gap = Solver.Separation(top[0], top[1]);
+                Ui.Line();
+                Ui.Line($"  ! Valid area splits into {r.Blobs.Count} separated pockets, {gap:0} blocks apart at the widest.", ConsoleColor.Yellow);
+                Ui.Line("    Could be two skeletons, or just not enough readings to break the symmetry yet.");
+                for (int i = 0; i < top.Count; i++)
+                {
+                    var b = top[i];
+                    double share = (double)b.Count / r.Count * 100;
+                    Ui.Line($"      pocket {i + 1}  ({b.Cx,8:0.#}, {b.Cy,8:0.#}, {b.Cz,8:0.#})  {share,5:0.#}% of candidates");
+                    Ui.Line($"                 {b.Span}", ConsoleColor.DarkGray);
                 }
             }
+        }
 
-            Console.WriteLine();
-            Console.WriteLine($"[{readings.Count} reading(s), metric={metric}, grid step={step:0.##}]");
+        // ---------- timer ----------
 
-            if (validPoints.Count == 0)
+        static void StartTimer(string[] tokens)
+        {
+            double? explicitInterval = null;
+            if (tokens.Length >= 2 &&
+                double.TryParse(tokens[1], NumberStyles.Float, CultureInfo.InvariantCulture, out double secs))
             {
-                Console.WriteLine("No sampled point satisfied every reading at this resolution.");
-                Console.WriteLine("Either the readings are (nearly) contradictory, or the valid region is");
-                Console.WriteLine("thinner than the current grid step - try 'estimate' again after adding");
-                Console.WriteLine("another reading to shrink the search box, which increases resolution.");
-                Console.WriteLine();
-                return;
+                if (secs < 1 || secs > 120)
+                {
+                    Ui.Line("Interval should be between 1 and 120 seconds.");
+                    return;
+                }
+                explicitInterval = secs;
             }
 
-            double avgX = validPoints.Average(p => p.x);
-            double avgY = validPoints.Average(p => p.y);
-            double avgZ = validPoints.Average(p => p.z);
+            timer.Start(explicitInterval);
+            Ui.Line("Countdown running - it shows at the right edge of the line and in the window title.", ConsoleColor.DarkCyan);
+            Ui.Line("  When you hear the relic, hit Enter on an empty line (or type 'ping') to re-sync.");
+            Ui.Line("  It learns the real interval from the gaps between your pings. 'stoptimer' to end.");
+        }
 
-            double lowX = validPoints.Min(p => p.x), highX = validPoints.Max(p => p.x);
-            double lowY = validPoints.Min(p => p.y), highY = validPoints.Max(p => p.y);
-            double lowZ = validPoints.Min(p => p.z), highZ = validPoints.Max(p => p.z);
+        // ---------- help ----------
 
-            Console.WriteLine($"Estimated location (avg of {validPoints.Count} candidates): " +
-                               $"({avgX:0.#}, {avgY:0.#}, {avgZ:0.#})");
-            Console.WriteLine($"Possible region spans: X[{lowX:0.#},{highX:0.#}]  " +
-                               $"Y[{lowY:0.#},{highY:0.#}]  Z[{lowZ:0.#},{highZ:0.#}]");
-            Console.WriteLine();
-
-            lastEstX = avgX; lastEstY = avgY; lastEstZ = avgZ;
-            haveLastEstimate = true;
+        static void PrintHelp()
+        {
+            Ui.Line();
+            Ui.Line("Readings", ConsoleColor.Cyan);
+            Ui.Line("  x y z letter         add a reading      e.g.  -12 70 305 C");
+            Ui.Line("  x y z nothing        no sound at all (also: none, silent, x, -)");
+            Ui.Line("  list                 every reading with its track and confidence");
+            Ui.Line("  conflicts            which pairs of readings disagree, and by how much");
+            Ui.Line("  delete N             drop reading #N (ids are stable, they never shift)");
+            Ui.Line("  estimate / tracks    re-solve without adding anything");
+            Ui.Line("  reset                wipe everything");
+            Ui.Line();
+            Ui.Line("Finding one", ConsoleColor.Cyan);
+            Ui.Line("  found x y z          confirm a kill; retires only the readings that pointed there,");
+            Ui.Line("  x y z found          leaving anything that was describing a different skeleton");
+            Ui.Line("  found                wipe the board entirely");
+            Ui.Line();
+            Ui.Line("Relic", ConsoleColor.Cyan);
+            Ui.Line("  relic g1 / gii / tier3 / refined      switch relic grade");
+            Ui.Line("  bands                                 show the current band table");
+            Ui.Line("  metric euclidean | chebyshev          round vs blocky rings");
+            Ui.Line();
+            Ui.Line("Sound timer", ConsoleColor.Cyan);
+            Ui.Line("  starttimer [secs]    begin the countdown to the next sound (default 20s)");
+            Ui.Line("  <Enter> or ping      you heard it - re-sync and calibrate the interval");
+            Ui.Line("  timer                current state");
+            Ui.Line("  stoptimer            stop the countdown");
+            Ui.Line();
+            Ui.Line("A is always the closest ring. Letters step outward; the letter after the last");
+            Ui.Line("audible ring means silence, which you can always just type as 'nothing'.");
+            Ui.Line();
         }
     }
 }
