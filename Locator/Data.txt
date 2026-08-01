@@ -1,0 +1,366 @@
+Added reading #1: pos=(-119,-1319,-241) range=far -> distance 101-150
+
+[1 reading(s), metric=Euclidean, grid step=2.38]
+Estimated location (avg of 742935 candidates): (-119, -1319, -241)
+Possible region spans: X[-269,28.6]  Y[-1469,-1171.4]  Z[-391,-93.4]
+
+> -63 -1319 -285 near
+Added reading #2: pos=(-63,-1319,-285) range=near -> distance 51-100
+
+[2 reading(s), metric=Euclidean, grid step=1.57]
+Estimated location (avg of 458699 candidates): (-41.6, -1319, -301.8)
+Possible region spans: X[-147.3,30.3]  Y[-1419,-1219.4]  Z[-383.4,-190.2]
+
+> -54 -1320 -199 far
+Added reading #3: pos=(-54,-1320,-199) range=far -> distance 101-150
+
+[3 reading(s), metric=Euclidean, grid step=1.47]
+Estimated location (avg of 271210 candidates): (-35.2, -1319.1, -304.3)
+Possible region spans: X[-126.2,29.7]  Y[-1419,-1220.4]  Z[-349,-240.2]
+
+> -54 -1319 -231 far
+Added reading #4: pos=(-54,-1319,-231) range=far -> distance 101-150
+
+[4 reading(s), metric=Euclidean, grid step=1.47]
+Estimated location (avg of 156670 candidates): (-47.1, -1319.9, -316.4)
+Possible region spans: X[-126.2,19.4]  Y[-1419,-1220.4]  Z[-349,-254.9]
+
+> -54 -1319 -256 far
+Added reading #5: pos=(-54,-1319,-256) range=far -> distance 101-150
+
+[5 reading(s), metric=Euclidean, grid step=1.47]
+Estimated location (avg of 32080 candidates): (-66.6, -1322.7, -309.2)
+Possible region spans: X[-126.2,-1.2]  Y[-1419,-1220.4]  Z[-337.2,-262.2]
+
+> -54 -1320 -268 far
+Added reading #6: pos=(-54,-1320,-268) range=far -> distance 101-150
+
+[6 reading(s), metric=Euclidean, grid step=1.47]
+Estimated location (avg of 12117 candidates): (-78.4, -1305.7, -304.3)
+Possible region spans: X[-126.2,-10]  Y[-1419,-1220.4]  Z[-324,-262.2]
+
+> -78 -1319 -294 near
+Added reading #7: pos=(-78,-1319,-294) range=near -> distance 51-100
+
+[7 reading(s), metric=Euclidean, grid step=1.42]
+Estimated location (avg of 11516 candidates): (-85.2, -1307.3, -304.3)
+Possible region spans: X[-124.6,-19.5]  Y[-1419,-1220.1]  Z[-323.4,-262.3]
+
+> -98 -1319 -339 near
+Added reading #8: pos=(-98,-1319,-339) range=near -> distance 51-100
+
+[8 reading(s), metric=Euclidean, grid step=1.22]
+Estimated location (avg of 9756 candidates): (-95.9, -1314, -309.6)
+Possible region spans: X[-125.2,-44.7]  Y[-1414.1,-1225.1]  Z[-323.4,-289.2]
+
+> -99 -1319 -391 near
+Added reading #9: pos=(-99,-1319,-391) range=near -> distance 51-100
+
+[9 reading(s), metric=Euclidean, grid step=1]
+Estimated location (avg of 506 candidates): (-109.5, -1315, -320.7)
+Possible region spans: X[-120,-91]  Y[-1393,-1245]  Z[-324,-317]
+
+> -109 -1282 -319 far
+Added reading #10: pos=(-109,-1282,-319) range=far -> distance 101-150
+
+[10 reading(s), metric=Euclidean, grid step=1]
+Estimated location (avg of 194 candidates): (-110, -1386.5, -320.6)
+Possible region spans: X[-120,-95]  Y[-1393,-1383]  Z[-324,-317]
+
+FOUND -81 -1385 -348
+
+Data#2
+
+> -217 -1804 -211 farfar
+Added reading #1: pos=(-217,-1804,-211) range=farfar -> distance 151-250
+
+[1 reading(s), metric=Euclidean, grid step=3.97]
+Estimated location (avg of 824478 candidates): (-217, -1804, -211)
+Possible region spans: X[-467,29.1]  Y[-2054,-1557.9]  Z[-461,35.1]
+
+> -171 -1804 -230 nothing
+Added reading #2: pos=(-171,-1804,-230) range=nothing -> distance 201-∞
+
+[2 reading(s), metric=Euclidean, grid step=3.97]
+Estimated location (avg of 512722 candidates): (-265.5, -1804, -191)
+Possible region spans: X[-467,29.1]  Y[-2054,-1557.9]  Z[-461,35.1]
+
+> -280 -1803 -155 far
+Added reading #3: pos=(-280,-1803,-155) range=far -> distance 101-150
+
+[3 reading(s), metric=Euclidean, grid step=2.38]
+Estimated location (avg of 301776 candidates): (-342.3, -1802.5, -112.2)
+Possible region spans: X[-430,-196.7]  Y[-1953,-1655.4]  Z[-276.4,-7.4]
+
+> -286 -1835 -108 near
+Added reading #4: pos=(-286,-1835,-108) range=near -> distance 51-100
+
+[4 reading(s), metric=Euclidean, grid step=1.59]
+Estimated location (avg of 293209 candidates): (-313.2, -1851.7, -66.7)
+Possible region spans: X[-386,-214.6]  Y[-1935,-1739.7]  Z[-173.1,-9.6]
+
+> -264 -1839 -18 near
+Added reading #5: pos=(-264,-1839,-18) range=near -> distance 51-100
+
+[5 reading(s), metric=Euclidean, grid step=1.24]
+Estimated location (avg of 246078 candidates): (-304.5, -1844.8, -52.3)
+Possible region spans: X[-361.5,-214.9]  Y[-1925.1,-1748.6]  Z[-99.4,-12.4]
+
+> -217 -1838 -1 near
+Added reading #6: pos=(-217,-1838,-1) range=near -> distance 51-100
+
+[6 reading(s), metric=Euclidean, grid step=1.06]
+Estimated location (avg of 89993 candidates): (-269, -1843.7, -46)
+Possible region spans: X[-315.9,-215.2]  Y[-1913.8,-1758.9]  Z[-73.4,-11.9]
+
+> -200 -1832 5 far
+Added reading #7: pos=(-200,-1832,5) range=far -> distance 101-150
+
+[7 reading(s), metric=Euclidean, grid step=1.06]
+Estimated location (avg of 55664 candidates): (-279.9, -1848.4, -47.3)
+Possible region spans: X[-315.9,-225.8]  Y[-1913.8,-1758.9]  Z[-73.4,-11.9]
+
+> -305 -1806 -4 far
+Added reading #8: pos=(-305,-1806,-4) range=far -> distance 101-150
+
+[8 reading(s), metric=Euclidean, grid step=1.06]
+Estimated location (avg of 15789 candidates): (-259.9, -1896.2, -58)
+Possible region spans: X[-286.2,-225.8]  Y[-1913.8,-1873.5]  Z[-73.4,-36.3]
+
+> -249 -1850 -19 near
+Added reading #9: pos=(-249,-1850,-19) range=near -> distance 51-100
+
+[9 reading(s), metric=Euclidean, grid step=1.04]
+Estimated location (avg of 16726 candidates): (-259.9, -1896.2, -58)
+Possible region spans: X[-286.8,-225.4]  Y[-1913.1,-1873.6]  Z[-73.9,-36.5]
+
+FOUND -287 -1889 -79
+
+Data#3 
+
+> -147 -2513 -21 farfar
+Added reading #1: pos=(-147,-2513,-21) range=farfar -> distance 151-250
+
+[1 reading(s), metric=Euclidean, grid step=3.97]
+Estimated location (avg of 824478 candidates): (-147, -2513, -21)
+Possible region spans: X[-397,99.1]  Y[-2763,-2266.9]  Z[-271,225.1]
+
+> -110 -2514 -116 farfar
+Added reading #2: pos=(-110,-2514,-116) range=farfar -> distance 151-250
+
+[2 reading(s), metric=Euclidean, grid step=3.6]
+Estimated location (avg of 529446 candidates): (-128.5, -2513.5, -68.5)
+Possible region spans: X[-360,101.2]  Y[-2755.8,-2269.3]  Z[-271,132.6]
+
+> -18 -2536 -151 nothing
+Added reading #3: pos=(-18,-2536,-151) range=nothing -> distance 201-∞
+
+[3 reading(s), metric=Euclidean, grid step=3.6]
+Estimated location (avg of 380935 candidates): (-175.8, -2501.3, -59.3)
+Possible region spans: X[-360,101.2]  Y[-2755.8,-2269.3]  Z[-267.4,132.6]
+
+> -60 -2523 -141 farfar
+Added reading #4: pos=(-60,-2523,-141) range=farfar -> distance 151-250
+
+[4 reading(s), metric=Euclidean, grid step=3.38]
+Estimated location (avg of 279254 candidates): (-137.7, -2506.5, -77.7)
+Possible region spans: X[-310,98.4]  Y[-2756.2,-2280.3]  Z[-267.6,107]
+
+> -135 -2518 56 nothing
+Added reading #5: pos=(-135,-2518,56) range=nothing -> distance 201-∞
+
+[5 reading(s), metric=Euclidean, grid step=3.38]
+Estimated location (avg of 203229 candidates): (-166.3, -2499.3, -118.5)
+Possible region spans: X[-310,98.4]  Y[-2756.2,-2280.3]  Z[-267.6,59.8]
+
+> -203 -2514 -44 far
+Added reading #6: pos=(-203,-2514,-44) range=far -> distance 101-150
+
+[6 reading(s), metric=Euclidean, grid step=2.26]
+Estimated location (avg of 97761 candidates): (-262.5, -2515.5, -117.8)
+Possible region spans: X[-310,-163]  Y[-2661.7,-2365.5]  Z[-187.2,-40.2]
+
+> -247 -2518 -130 near
+Added reading #7: pos=(-247,-2518,-130) range=near -> distance 51-100
+
+[7 reading(s), metric=Euclidean, grid step=1.39]
+Estimated location (avg of 222811 candidates): (-274, -2519.8, -126.4)
+Possible region spans: X[-310,-218.4]  Y[-2618,-2418.1]  Z[-188.4,-59.4]
+
+> -197 -2509 -129 far
+Added reading #8: pos=(-197,-2509,-129) range=far -> distance 101-150
+
+[8 reading(s), metric=Euclidean, grid step=1.39]
+Estimated location (avg of 137047 candidates): (-281.6, -2533.5, -116.7)
+Possible region spans: X[-310,-218.4]  Y[-2618,-2418.1]  Z[-167.6,-59.4]
+
+> -282 -2528 -117 far
+Added reading #9: pos=(-282,-2528,-117) range=far -> distance 101-150
+
+[9 reading(s), metric=Euclidean, grid step=1.39]
+Estimated location (avg of 8228 candidates): (-255.8, -2457.9, -125.7)
+Possible region spans: X[-290.6,-218.4]  Y[-2618,-2418.1]  Z[-166.2,-71.9]
+
+> delete 9
+Removed #9: (-282,-2528,-117) range=far.
+
+[8 reading(s), metric=Euclidean, grid step=1.39]
+Estimated location (avg of 137047 candidates): (-281.6, -2533.5, -116.7)
+Possible region spans: X[-310,-218.4]  Y[-2618,-2418.1]  Z[-167.6,-59.4]
+
+> -282 -2528 -117 far
+Added reading #9: pos=(-282,-2528,-117) range=far -> distance 101-150
+
+[9 reading(s), metric=Euclidean, grid step=1.39]
+Estimated location (avg of 8228 candidates): (-255.8, -2457.9, -125.7)
+Possible region spans: X[-290.6,-218.4]  Y[-2618,-2418.1]  Z[-166.2,-71.9]
+
+> -282 -2529 -116 near
+Added reading #10: pos=(-282,-2529,-116) range=near -> distance 51-100
+
+[10 reading(s), metric=Euclidean, grid step=1.26]
+Estimated location (avg of 280 candidates): (-231.7, -2612.6, -131.6)
+Possible region spans: X[-243.4,-225.8]  Y[-2618,-2599.2]  Z[-165.1,-101]
+
+FOUND -228 -2599 -162
+
+Data#4
+
+Added reading #1: pos=(-101,-4241,-471) range=farfar -> distance 151-250
+
+[1 reading(s), metric=Euclidean, grid step=3.97]
+Estimated location (avg of 824478 candidates): (-101, -4241, -471)
+Possible region spans: X[-351,145.1]  Y[-4491,-3994.9]  Z[-721,-224.9]
+
+> -12 -4240 -430 far
+Added reading #2: pos=(-12,-4240,-430) range=far -> distance 101-150
+
+[2 reading(s), metric=Euclidean, grid step=2.38]
+Estimated location (avg of 421032 candidates): (37.6, -4239.5, -407.2)
+Possible region spans: X[-114.4,135.6]  Y[-4390,-4092.4]  Z[-577.6,-282.4]
+
+> -30 -4240 -333 far
+Added reading #3: pos=(-30,-4240,-333) range=far -> distance 101-150
+
+[3 reading(s), metric=Euclidean, grid step=2.05]
+Estimated location (avg of 170422 candidates): (36.4, -4239.4, -368.1)
+Possible region spans: X[-108.8,118.5]  Y[-4381.8,-4099.2]  Z[-440,-302.8]
+
+> -31 -4240 -113 nothing
+Added reading #4: pos=(-31,-4240,-113) range=nothing -> distance 201-∞
+
+[4 reading(s), metric=Euclidean, grid step=2.05]
+Estimated location (avg of 170422 candidates): (36.4, -4239.4, -368.1)
+Possible region spans: X[-108.8,118.5]  Y[-4381.8,-4099.2]  Z[-440,-302.8]
+
+> -22 -4205 -385 far
+Added reading #5: pos=(-22,-4205,-385) range=far -> distance 101-150
+
+[5 reading(s), metric=Euclidean, grid step=1.96]
+Estimated location (avg of 103871 candidates): (58.9, -4255.6, -365)
+Possible region spans: X[-110.9,117]  Y[-4355,-4099.6]  Z[-437.8,-302.2]
+
+> -22 -4213 -385 far
+Added reading #6: pos=(-22,-4213,-385) range=far -> distance 101-150
+
+[6 reading(s), metric=Euclidean, grid step=1.96]
+Estimated location (avg of 103586 candidates): (58.9, -4255.6, -365)
+Possible region spans: X[-110.9,117]  Y[-4355,-4099.6]  Z[-437.8,-302.2]
+
+> delete 5
+Removed #5: (-22,-4205,-385) range=far.
+
+[5 reading(s), metric=Euclidean, grid step=1.98]
+Estimated location (avg of 128557 candidates): (48.3, -4253.6, -366)
+Possible region spans: X[-108.4,117.8]  Y[-4363,-4099.1]  Z[-439.3,-302.4]
+
+> -22 -4205 -385 farfar
+Added reading #6: pos=(-22,-4205,-385) range=farfar -> distance 151-250
+
+[6 reading(s), metric=Euclidean, grid step=1.98]
+Estimated location (avg of 15281 candidates): (15.4, -4341.6, -368.2)
+Possible region spans: X[-100.5,117.8]  Y[-4363,-4253.9]  Z[-435.4,-316.3]
+
+> 79 -4260 -329 far
+Added reading #7: pos=(79,-4260,-329) range=far -> distance 101-150
+
+[7 reading(s), metric=Euclidean, grid step=1.69]
+Estimated location (avg of 10996 candidates): (10.1, -4350.6, -372.7)
+Possible region spans: X[-47.4,70.8]  Y[-4363,-4322.5]  Z[-431.7,-315.3]
+
+> 76 -4260 -328 far
+Added reading #8: pos=(76,-4260,-328) range=far -> distance 101-150
+
+[8 reading(s), metric=Euclidean, grid step=1.68]
+Estimated location (avg of 10880 candidates): (9.8, -4350.7, -373.1)
+Possible region spans: X[-47.4,70.5]  Y[-4363,-4322.6]  Z[-432.5,-316.2]
+
+> 88 -4260 -328 farfar
+Added reading #9: pos=(88,-4260,-328) range=farfar -> distance 151-250
+
+[9 reading(s), metric=Euclidean, grid step=1.68]
+Estimated location (avg of 1520 candidates): (-17.7, -4355.4, -375.8)
+Possible region spans: X[-47.4,16.6]  Y[-4363,-4341.1]  Z[-432.5,-323]
+
+> 16 -4297 -437 far
+Added reading #10: pos=(16,-4297,-437) range=far -> distance 101-150
+
+[10 reading(s), metric=Euclidean, grid step=1.58]
+Estimated location (avg of 790 candidates): (-32.1, -4353.6, -347.6)
+Possible region spans: X[-47.3,-17.3]  Y[-4361.4,-4340.9]  Z[-370.6,-323.2]
+
+> 6 -4325 -419
+Didn't understand that. Type 'help' for usage.
+> 6 -4325 -419 near
+Added reading #11: pos=(6,-4325,-419) range=near -> distance 51-100
+
+[11 reading(s), metric=Euclidean, grid step=1.25]
+Estimated location (avg of 1429 candidates): (-31, -4354.6, -349.9)
+Possible region spans: X[-43.6,-16.1]  Y[-4361.8,-4345.5]  Z[-370.7,-330.8]
+
+> -50 -4328 -403 near
+Added reading #12: pos=(-50,-4328,-403) range=near -> distance 51-100
+
+[12 reading(s), metric=Euclidean, grid step=1.09]
+Estimated location (avg of 2113 candidates): (-31, -4354.6, -349.8)
+Possible region spans: X[-43.7,-16.4]  Y[-4361.9,-4345.5]  Z[-370,-330.7]
+
+> FOUND -25 -4361 -369
+
+Data#5
+
+Added reading #1: pos=(-396,-4449,-79) range=farfar -> distance 151-250
+
+[1 reading(s), metric=Euclidean, grid step=3.97]
+Estimated location (avg of 824478 candidates): (-396, -4449, -79)
+Possible region spans: X[-646,-149.9]  Y[-4699,-4202.9]  Z[-329,167.1]
+
+> -386 -4450 25 nothing
+Added reading #2: pos=(-386,-4450,25) range=nothing -> distance 201-∞
+
+[2 reading(s), metric=Euclidean, grid step=3.97]
+Estimated location (avg of 541550 candidates): (-402.3, -4448.4, -144.7)
+Possible region spans: X[-646,-149.9]  Y[-4699,-4202.9]  Z[-329,95.6]
+
+> -389 -4449 -166 farfar
+Added reading #3: pos=(-389,-4449,-166) range=farfar -> distance 151-250
+
+[3 reading(s), metric=Euclidean, grid step=3.71]
+Estimated location (avg of 423263 candidates): (-398.1, -4448.5, -159.3)
+Possible region spans: X[-635.3,-149.8]  Y[-4695.3,-4206.1]  Z[-329,-10.3]
+
+> -481 -4449 -165 near
+Added reading #4: pos=(-481,-4449,-165) range=near -> distance 51-100
+
+[4 reading(s), metric=Euclidean, grid step=1.59]
+Estimated location (avg of 185688 candidates): (-544.8, -4449, -174.5)
+Possible region spans: X[-581,-503.2]  Y[-4545.8,-4352.2]  Z[-261.8,-92]
+
+> -482 -4416 -166 near
+Added reading #5: pos=(-482,-4416,-166) range=near -> distance 51-100
+
+[5 reading(s), metric=Euclidean, grid step=1.49]
+Estimated location (avg of 149322 candidates): (-545.2, -4425.7, -174.4)
+Possible region spans: X[-579.5,-503.5]  Y[-4504.1,-4352.1]  Z[-260.5,-93.7]
+
+> -568 -4422 -174 FOUND
