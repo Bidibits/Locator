@@ -146,8 +146,8 @@ namespace SpawnLocator
 
                 case "stoptimer":
                 case "timerstop":
-                    timer.Stop();
-                    Ui.Line("Timer stopped.");
+                    if (!timer.Running) Ui.Line("Timer isn't running.");
+                    else timer.Stop();
                     return true;
 
                 case "timer":
@@ -569,9 +569,11 @@ namespace SpawnLocator
             }
 
             timer.Start(explicitInterval);
-            Ui.Line("Countdown running - it shows at the right edge of the line and in the window title.", ConsoleColor.DarkCyan);
-            Ui.Line("  When you hear the relic, hit Enter on an empty line (or type 'ping') to re-sync.");
-            Ui.Line("  It learns the real interval from the gaps between your pings. 'stoptimer' to end.");
+            Ui.Line("Loop running - it shows at the right edge of the line and in the window title.", ConsoleColor.DarkCyan);
+            Ui.Line("  The countdown refills the moment it empties and the loop counter ticks up.");
+            Ui.Line("  When you hear the relic, hit Enter on an empty line (or type 'ping') to re-align.");
+            Ui.Line("  It learns the real interval from the gaps between your pings; you don't have to");
+            Ui.Line("  catch every sound. 'timer' for the count, 'stoptimer' to end.");
         }
 
         // ---------- help ----------
@@ -599,10 +601,10 @@ namespace SpawnLocator
             Ui.Line("  metric euclidean | chebyshev          round vs blocky rings");
             Ui.Line();
             Ui.Line("Sound timer", ConsoleColor.Cyan);
-            Ui.Line("  starttimer [secs]    begin the countdown to the next sound (default 20s)");
-            Ui.Line("  <Enter> or ping      you heard it - re-sync and calibrate the interval");
-            Ui.Line("  timer                current state");
-            Ui.Line("  stoptimer            stop the countdown");
+            Ui.Line("  starttimer [secs]    start the loop (default 20s); it refills and counts each cycle");
+            Ui.Line("  <Enter> or ping      you heard it - re-align the loop and calibrate the interval");
+            Ui.Line("  timer                loop number, time to next sound, how long it's been running");
+            Ui.Line("  stoptimer            stop, and report the total loop count");
             Ui.Line();
             Ui.Line("A is always the closest ring. Letters step outward; the letter after the last");
             Ui.Line("audible ring means silence, which you can always just type as 'nothing'.");

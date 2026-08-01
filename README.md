@@ -51,7 +51,7 @@ entered with, so an old `D` never silently changes meaning.
 | `reset` | Wipe everything |
 | `relic <spec>` / `bands` | Change relic / show the band table |
 | `metric euclidean｜chebyshev` | Round vs blocky rings |
-| `starttimer [secs]` / `ping` / `timer` / `stoptimer` | Sound countdown |
+| `starttimer [secs]` / `ping` / `timer` / `stoptimer` | Looping sound countdown + cycle count |
 
 ## What it does beyond averaging
 
@@ -100,12 +100,30 @@ a different skeleton, the newest readings are the ones describing where you actu
 far off the estimate was. Anything left over was describing a different skeleton, so it
 stays on the board and re-solves on its own. Bare `found` wipes everything.
 
-### Sound timer
+### Sound loop
 
-The relic re-announces on a fixed cadence. `starttimer` runs a countdown at the right
-edge of the line and in the window title; hit Enter on an empty line (or type `ping`)
-the moment you hear it to re-sync. It learns the real interval from the median gap
-between your pings rather than trusting the 20s default.
+The relic re-announces on a fixed cadence. `starttimer` runs that cadence as a loop —
+the countdown refills the instant it empties and the loop counter ticks up, so you can
+see both how long until the next sound and how many have gone by:
+
+```
+[███████░░░  12.4s  loop 7]
+```
+
+Drawn at the right edge of whatever line the cursor is on, then the cursor is put back,
+so it never disturbs typing. The window title mirrors it, which keeps working when the
+console is too narrow or output is redirected.
+
+Hit Enter on an empty line (or type `ping`) the moment you hear a sound to re-align the
+loop. You don't have to catch every one — a gap spanning several cycles is folded down
+before it's used, so pinging every second or third sound still calibrates correctly. The
+interval is the median of recent measurements rather than the 20s default, and a
+measurement is only believed if it lands within 0.4×–2.5× of the interval already held.
+
+Rolling over keeps the phase rather than resetting it, so the loop stays aligned to the
+sound even after a long pause. If three or more loops pass without a confirming ping the
+counter turns amber — the phase may have drifted, or you may have walked out of range.
+`timer` reports the count, `stoptimer` the total.
 
 ## How the solve works
 
