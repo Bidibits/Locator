@@ -21,6 +21,8 @@ namespace SpawnLocator
         public char Letter;
         public string RelicName = "";
         public DateTime Timestamp;      // wall-clock moment the reading was entered
+        public bool Retired;            // true once a 'found' matched it - kept, never deleted
+        public int? RetiredByKillId;
 
         public bool IsSilent => double.IsPositiveInfinity(MaxDist);
 

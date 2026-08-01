@@ -10,10 +10,15 @@ namespace SpawnLocator
     class Program
     {
         static readonly List<Reading> readings = new List<Reading>();
+        static readonly List<Kill> kills = new List<Kill>();
+        static readonly List<Session> sessions = new List<Session>();
+        static Session currentSession = null!;
         static readonly PingTimer timer = new PingTimer();
 
         static RelicTier relic = Relics.Repaired;
         static int nextSeq = 1;
+        static int nextKillId = 1;
+        static bool replaying;
 
         // Part 2 baseline: what a single reading allows on its own, cached per reading id.
         // Each track measures against its OWN oldest reading, so every hunt starts at 100%
@@ -30,6 +35,8 @@ namespace SpawnLocator
         //   D readings landed at ~101-105  -> matches D (101-150)
         static DistanceMetric metric = DistanceMetric.Euclidean;
 
+        static List<Reading> Active() => readings.Where(r => !r.Retired).ToList();
+
         static void Main()
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -38,12 +45,20 @@ namespace SpawnLocator
             Ui.Line("=== Ghost Seek Locator ===", ConsoleColor.Cyan);
             Ui.Line("Triangulates a Praying Skeleton from Ghost Seek relic sound readings.");
             Ui.Line();
+            Ui.Line("This session's activity (every command you type, and its outcome) stays in memory", ConsoleColor.DarkYellow);
+            Ui.Line("for this run only. It is never written anywhere and never leaves this machine unless", ConsoleColor.DarkYellow);
+            Ui.Line("you explicitly run 'output' (or 'export'/'save') to save it yourself.", ConsoleColor.DarkYellow);
+            Ui.Line();
+
+            currentSession = new Session { StartedAt = DateTime.Now };
+            sessions.Add(currentSession);
 
             AskForRelic();
 
             Ui.Line("Enter readings as:  x y z letter        e.g.  120 64 -30 C");
-            Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z | output");
-            Ui.Line("          starttimer | ping | stoptimer | relic | bands | metric | reset | help | exit");
+            Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z | history");
+            Ui.Line("          output | import | sessions | simulate | starttimer | ping | stoptimer");
+            Ui.Line("          relic | bands | metric | reset | help | exit");
             Ui.Line();
 
             while (true)
@@ -53,120 +68,159 @@ namespace SpawnLocator
                 if (line == null) break;
                 line = line.Trim();
 
-                // Bare Enter while the countdown runs is the fastest way to log a sound:
-                // you hear it, you hit Enter.
-                if (line.Length == 0)
-                {
-                    if (timer.Running) Ui.Line("  " + timer.Ping(), ConsoleColor.DarkCyan);
-                    continue;
-                }
-
-                if (!Dispatch(line)) break;
+                if (!ProcessLine(line)) break;
             }
 
             timer.Stop();
         }
 
-        // Returns false to quit.
+        // Shared by the live loop and by replay, so a blank Enter (ping) behaves identically
+        // either way and both paths log through the same place.
+        static bool ProcessLine(string line)
+        {
+            if (line.Length == 0)
+            {
+                string outcome;
+                if (replaying)
+                {
+                    outcome = "ping (replayed, timer not touched)";
+                }
+                else if (timer.Running)
+                {
+                    outcome = timer.Ping();
+                    Ui.Line("  " + outcome, ConsoleColor.DarkCyan);
+                }
+                else
+                {
+                    outcome = "no-op, timer not running";
+                }
+                if (!replaying) RecordActivity(line, outcome);
+                return true;
+            }
+            return Dispatch(line);
+        }
+
         static bool Dispatch(string line)
         {
+            var (cont, outcome) = DispatchCore(line);
+            if (!replaying) RecordActivity(line, outcome);
+            return cont;
+        }
+
+        static void RecordActivity(string rawInput, string outcome)
+        {
+            currentSession.Entries.Add(new ActivityLogEntry { Timestamp = Clock.Now, RawInput = rawInput, Outcome = outcome });
+        }
+
+        // Returns (keep running?, short outcome for the activity log).
+        static (bool cont, string outcome) DispatchCore(string line)
+        {
             var tokens = line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
+            if (tokens.Length == 0) return (true, "no-op");
             string head = tokens[0].ToLowerInvariant();
 
             // "x y z found" has to be checked before the plain 4-token reading form.
             if (tokens.Length == 4 && tokens[3].Equals("found", StringComparison.OrdinalIgnoreCase))
-            {
-                HandleFound(tokens[0], tokens[1], tokens[2]);
-                return true;
-            }
+                return (true, HandleFound(tokens[0], tokens[1], tokens[2]));
 
             switch (head)
             {
                 case "exit":
                 case "quit":
-                    return false;
+                    return (false, "session ended");
 
                 case "help":
                     PrintHelp();
-                    return true;
+                    return (true, "help shown");
 
                 case "bands":
                     Relics.PrintTable(relic);
-                    return true;
+                    return (true, "band table shown");
 
                 case "relic":
                 case "tier":
                 case "seeker":
                 case "seek":
-                    ChangeRelic(tokens.Skip(1));
-                    return true;
+                    return (true, ChangeRelic(tokens.Skip(1)));
 
                 case "reset":
-                    readings.Clear();
-                    soloVolumeCache.Clear();
-                    nextSeq = 1;
-                    Ui.Line("All readings cleared.");
-                    return true;
+                    return (true, DoReset());
 
                 case "found":
-                    if (tokens.Length == 4) HandleFound(tokens[1], tokens[2], tokens[3]);
-                    else if (tokens.Length == 1) ClearEverythingAsFound();
-                    else Ui.Line("Usage: found x y z   (or 'x y z found', or bare 'found' to wipe the board)");
-                    return true;
+                    if (tokens.Length == 4) return (true, HandleFound(tokens[1], tokens[2], tokens[3]));
+                    if (tokens.Length == 1) return (true, ClearEverythingAsFound());
+                    Ui.Line("Usage: found x y z   (or 'x y z found', or bare 'found' to retire everything)");
+                    return (true, "rejected: bad 'found' usage");
 
                 case "list":
-                    ListReadings();
-                    return true;
+                    return (true, ListReadings());
 
                 case "conflicts":
-                    ListConflicts();
-                    return true;
+                    return (true, ListConflicts());
+
+                case "history":
+                    return (true, ShowHistory());
 
                 case "output":
                 case "export":
                 case "save":
-                    WriteReport(tokens.Skip(1));
-                    return true;
+                    return (true, WriteReport(tokens.Skip(1)));
+
+                case "import":
+                case "load":
+                    return (true, ImportFile(tokens.Skip(1)));
+
+                case "sessions":
+                    return (true, ShowSessions());
+
+                case "simulate":
+                    return (true, Simulate(tokens.Skip(1)));
 
                 case "tracks":
                 case "estimate":
-                    Estimate();
-                    return true;
+                    return (true, Estimate());
 
                 case "delete":
                 case "remove":
-                    DeleteReading(tokens);
-                    return true;
+                    return (true, DeleteReading(tokens));
 
                 case "metric":
-                    ChangeMetric(tokens);
-                    return true;
+                    return (true, ChangeMetric(tokens));
 
                 case "starttimer":
                 case "timerstart":
-                    StartTimer(tokens);
-                    return true;
+                    if (replaying) return (true, "starttimer (skipped during replay)");
+                    return (true, StartTimer(tokens));
 
                 case "ping":
                 case "heard":
-                    Ui.Line("  " + timer.Ping(), ConsoleColor.DarkCyan);
-                    return true;
+                    if (replaying) return (true, "ping (skipped during replay)");
+                    {
+                        string outcome = timer.Ping();
+                        Ui.Line("  " + outcome, ConsoleColor.DarkCyan);
+                        return (true, outcome);
+                    }
 
                 case "stoptimer":
                 case "timerstop":
-                    if (!timer.Running) Ui.Line("Timer isn't running.");
-                    else timer.Stop();
-                    return true;
+                    if (replaying) return (true, "stoptimer (skipped during replay)");
+                    if (!timer.Running) { Ui.Line("Timer isn't running."); return (true, "rejected: timer not running"); }
+                    timer.Stop();
+                    return (true, "timer stopped");
 
                 case "timer":
-                    Ui.Line("  " + timer.Status());
-                    return true;
+                    if (replaying) return (true, "timer status (skipped during replay)");
+                    {
+                        string status = timer.Status();
+                        Ui.Line("  " + status);
+                        return (true, "timer status shown");
+                    }
             }
 
-            if (tokens.Length == 4) TryAddReading(tokens);
-            else Ui.Line("Didn't understand that. Type 'help' for usage.");
+            if (tokens.Length == 4) return (true, TryAddReading(tokens));
 
-            return true;
+            Ui.Line("Didn't understand that. Type 'help' for usage.");
+            return (true, "rejected: unrecognized command");
         }
 
         // ---------- relic selection ----------
@@ -176,6 +230,8 @@ namespace SpawnLocator
             Ui.Line("Which Ghost Seek are you using?");
             Relics.PrintChoices();
             Ui.Line("Type a grade (g1 / gii / tier3 / 2) or a name (refined).");
+
+            string chosenInput = "2";   // canonical default token - replayable via 'relic 2'
 
             while (true)
             {
@@ -199,43 +255,51 @@ namespace SpawnLocator
                 }
 
                 relic = parsed;
+                chosenInput = input;
                 break;
             }
 
             Ui.Line($"Using {relic.Label}.", ConsoleColor.Green);
             Relics.PrintTable(relic);
+
+            // Not routed through Dispatch (this prompt takes bare "gii", not "relic gii"), so it
+            // logs its own entry - synthesized into Dispatch-replayable form ("relic <token>")
+            // rather than the literal sub-prompt text, so 'simulate' can feed it straight back in.
+            RecordActivity($"relic {chosenInput}", $"relic set to {relic.Label}");
         }
 
-        static void ChangeRelic(IEnumerable<string> rest)
+        static string ChangeRelic(IEnumerable<string> rest)
         {
             string spec = string.Join(" ", rest).Trim();
             if (spec.Length == 0)
             {
                 Ui.Line($"Currently using {relic.Label}.");
                 Relics.PrintTable(relic);
-                return;
+                return $"relic table shown ({relic.Label})";
             }
 
             var parsed = Relics.Parse(spec);
             if (parsed == null)
             {
                 Ui.Line("Didn't recognise that relic. Try: g1 / gii / tier3 / makeshift / repaired / refined.", ConsoleColor.Yellow);
-                return;
+                return $"rejected: unrecognized relic '{spec}'";
             }
 
             relic = parsed;
             Ui.Line($"Switched to {relic.Label}.", ConsoleColor.Green);
-            if (readings.Count > 0)
-                Ui.Line($"  Existing {readings.Count} reading(s) keep the distances they were entered with - only new entries use the table below.", ConsoleColor.DarkGray);
+            int activeCount = Active().Count;
+            if (activeCount > 0)
+                Ui.Line($"  Existing {activeCount} reading(s) keep the distances they were entered with - only new entries use the table below.", ConsoleColor.DarkGray);
             Relics.PrintTable(relic);
+            return $"relic set to {relic.Label}";
         }
 
-        static void ChangeMetric(string[] tokens)
+        static string ChangeMetric(string[] tokens)
         {
             if (tokens.Length < 2)
             {
                 Ui.Line($"Current metric: {metric}. Use 'metric chebyshev' or 'metric euclidean'.");
-                return;
+                return $"metric status shown ({metric})";
             }
 
             if (tokens[1].StartsWith("cheb", StringComparison.OrdinalIgnoreCase))
@@ -251,21 +315,22 @@ namespace SpawnLocator
             else
             {
                 Ui.Line("Unknown metric. Use 'metric chebyshev' or 'metric euclidean'.");
-                return;
+                return "rejected: unknown metric";
             }
 
             soloVolumeCache.Clear();   // solo volumes are metric-dependent
-            if (readings.Count > 0) Estimate();
+            if (Active().Count > 0) Estimate();
+            return $"metric set to {metric}";
         }
 
         // ---------- readings ----------
 
-        static void TryAddReading(string[] tokens)
+        static string TryAddReading(string[] tokens)
         {
             if (!TryCoords(tokens[0], tokens[1], tokens[2], out double x, out double y, out double z))
             {
                 Ui.Line("Couldn't parse x/y/z as numbers. Format:  x y z letter");
-                return;
+                return "rejected: bad coordinates";
             }
 
             string raw = tokens[3].Trim();
@@ -274,7 +339,7 @@ namespace SpawnLocator
             {
                 string letters = string.Join(" ", relic.Bands.Select(b => b.Letter));
                 Ui.Line($"'{raw}' isn't a band on the {relic.Label}. Valid: {letters} (or 'nothing'). Type 'bands' for the table.", ConsoleColor.Yellow);
-                return;
+                return $"rejected: '{raw}' is not a valid band on {relic.Label}";
             }
 
             var reading = new Reading
@@ -285,12 +350,13 @@ namespace SpawnLocator
                 MaxDist = band.Max,
                 Letter = band.Letter,
                 RelicName = relic.Name,
-                Timestamp = DateTime.Now
+                Timestamp = Clock.Now
             };
             readings.Add(reading);
 
             Ui.Line($"Added #{reading.Seq} @ {reading.TimeText}: {reading.PosText}  {band.Letter} -> {band.RangeText}");
             Estimate();
+            return $"reading #{reading.Seq} added";
         }
 
         // Accepts the band letter, or 'nothing'/'none'/'silent'/'x'/'-' for out of range -
@@ -313,23 +379,24 @@ namespace SpawnLocator
                 && double.TryParse(c, NumberStyles.Float, CultureInfo.InvariantCulture, out z);
         }
 
-        static void ListReadings()
+        static string ListReadings()
         {
-            if (readings.Count == 0)
+            var active = Active();
+            if (active.Count == 0)
             {
-                Ui.Line("No readings yet.");
-                return;
+                Ui.Line("No active readings. 'history' shows retired ones.");
+                return "list shown (0 active)";
             }
 
-            var conf = Analysis.Confidence(readings, metric);
-            var tracks = Analysis.BuildTracks(readings, metric);
+            var conf = Analysis.Confidence(active, metric);
+            var tracks = Analysis.BuildTracks(active, metric);
             var trackOf = new Dictionary<int, int>();
             foreach (var t in tracks)
                 foreach (var r in t.Readings) trackOf[r.Seq] = t.Index;
 
             Ui.Line();
             Ui.Line($"  {"id",-4} {"time",-9} {"position",-26} {"band",-4} {"range",-15} {"track",-6} confidence");
-            foreach (var r in readings.OrderBy(r => r.Seq))
+            foreach (var r in active.OrderBy(r => r.Seq))
             {
                 double c = conf[r.Seq];
                 Ui.Raw($"  #{r.Seq,-3} {r.TimeText,-9} {r.PosText,-26} {r.Letter,-4} {r.BandText,-15} {trackOf[r.Seq],-6} ");
@@ -342,21 +409,23 @@ namespace SpawnLocator
                 }
             }
             Ui.Line();
+            return $"list shown ({active.Count} active)";
         }
 
-        static void ListConflicts()
+        static string ListConflicts()
         {
-            if (readings.Count < 2)
+            var active = Active();
+            if (active.Count < 2)
             {
-                Ui.Line("Need at least two readings before anything can conflict.");
-                return;
+                Ui.Line("Need at least two active readings before anything can conflict.");
+                return "conflicts shown (not enough active readings)";
             }
 
-            var pairs = Analysis.Conflicts(readings, metric);
+            var pairs = Analysis.Conflicts(active, metric);
             if (pairs.Count == 0)
             {
-                Ui.Line("No conflicts - every reading is compatible with every other.", ConsoleColor.Green);
-                return;
+                Ui.Line("No conflicts - every active reading is compatible with every other.", ConsoleColor.Green);
+                return "conflicts shown (none)";
             }
 
             Ui.Line();
@@ -367,53 +436,62 @@ namespace SpawnLocator
                 Ui.Line($"  #{a.Seq} {a.Letter} ({a.BandText})  vs  #{b.Seq} {b.Letter} ({b.BandText})   - they sit {d:0.#} blocks apart");
             }
             Ui.Line();
+            return $"conflicts shown ({pairs.Count})";
         }
 
-        static void DeleteReading(string[] tokens)
+        static string DeleteReading(string[] tokens)
         {
             if (tokens.Length != 2 || !int.TryParse(tokens[1], out int id))
             {
                 Ui.Line("Usage: delete N   (N is the #id shown by 'list'; ids are stable and never reused)");
-                return;
+                return "rejected: bad delete usage";
             }
 
             var target = readings.FirstOrDefault(r => r.Seq == id);
             if (target == null)
             {
                 Ui.Line($"No reading #{id}. Use 'list' to see what's there.");
-                return;
+                return $"rejected: no reading #{id}";
+            }
+
+            if (target.Retired)
+            {
+                Ui.Line($"#{id} is already retired (kill #{target.RetiredByKillId}). Use 'reset' if you want to wipe everything instead.", ConsoleColor.Yellow);
+                return $"rejected: #{id} already retired";
             }
 
             readings.Remove(target);
             Ui.Line($"Removed #{id}: {target.PosText} {target.Letter}.");
-            if (readings.Count > 0) Estimate();
-            else Ui.Line("No readings left.");
+            if (Active().Count > 0) Estimate();
+            else Ui.Line("No active readings left.");
+            return $"reading #{id} deleted";
         }
 
-        // ---------- part 5: found ----------
+        // ---------- found ----------
 
-        static void HandleFound(string sx, string sy, string sz)
+        static string HandleFound(string sx, string sy, string sz)
         {
             if (!TryCoords(sx, sy, sz, out double fx, out double fy, out double fz))
             {
                 Ui.Line("Couldn't parse those coordinates. Usage: found x y z   (or 'x y z found')");
-                return;
+                return "rejected: bad coordinates for 'found'";
             }
 
-            // Work out which track was pointing here before anything is removed, so the
-            // accuracy report compares against the estimate that actually led you there.
-            var tracks = Analysis.BuildTracks(readings, metric);
-            var matched = readings.Where(r => r.Satisfies(fx, fy, fz, metric)).ToList();
+            var active = Active();
+            var tracks = Analysis.BuildTracks(active, metric);
+            var matched = active.Where(r => r.Satisfies(fx, fy, fz, metric)).ToList();
 
             Ui.Line();
             Ui.Line($"Skeleton confirmed at ({fx:0.#}, {fy:0.#}, {fz:0.#}).", ConsoleColor.Green);
 
             if (matched.Count == 0)
             {
-                Ui.Line("  None of your readings are consistent with that spot, so nothing was removed.", ConsoleColor.Yellow);
+                Ui.Line("  None of your active readings are consistent with that spot, so nothing was retired.", ConsoleColor.Yellow);
                 Ui.Line("  Either a coordinate is mistyped, or every reading you have describes a different skeleton.");
-                Ui.Line("  Use 'reset' if you want to start clean.");
-                return;
+
+                var miss = new Kill { Id = nextKillId++, X = fx, Y = fy, Z = fz, Timestamp = Clock.Now };
+                kills.Add(miss);
+                return $"kill #{miss.Id} confirmed at ({fx:0.#},{fy:0.#},{fz:0.#}), no reading matched, nothing retired";
             }
 
             var owner = tracks
@@ -421,50 +499,117 @@ namespace SpawnLocator
                 .First();
 
             owner.Result = Solver.Solve(owner.Readings, metric);
+            double? err = null;
             if (owner.Result.Bounded && owner.Result.Count > 0)
             {
-                double err = Math.Sqrt(Math.Pow(fx - owner.Result.Cx, 2)
-                                     + Math.Pow(fy - owner.Result.Cy, 2)
-                                     + Math.Pow(fz - owner.Result.Cz, 2));
+                err = Math.Sqrt(Math.Pow(fx - owner.Result.Cx, 2)
+                              + Math.Pow(fy - owner.Result.Cy, 2)
+                              + Math.Pow(fz - owner.Result.Cz, 2));
                 Ui.Line($"  Track {owner.Index} estimated ({owner.Result.Cx:0.#}, {owner.Result.Cy:0.#}, {owner.Result.Cz:0.#}) - off by {err:0.#} blocks.");
             }
 
-            foreach (var r in matched) readings.Remove(r);
-            Ui.Line($"  Retired {matched.Count} reading(s) that pointed here: {string.Join(" ", matched.Select(r => "#" + r.Seq))}");
+            var kill = new Kill
+            {
+                Id = nextKillId++,
+                X = fx, Y = fy, Z = fz,
+                Timestamp = Clock.Now,
+                RetiredSeqs = matched.Select(r => r.Seq).ToList(),
+                TrackIndex = owner.Index,
+                EstimateError = err
+            };
+            kills.Add(kill);
+            foreach (var r in matched) { r.Retired = true; r.RetiredByKillId = kill.Id; }
 
-            if (readings.Count == 0)
+            Ui.Line($"  Kill #{kill.Id}: retired {matched.Count} reading(s) that pointed here: {string.Join(" ", matched.Select(r => "#" + r.Seq))}");
+
+            var stillActive = Active();
+            string outcome = $"kill #{kill.Id} confirmed at ({fx:0.#},{fy:0.#},{fz:0.#}), retired {string.Join(" ", kill.RetiredSeqs.Select(s => "#" + s))}";
+
+            if (stillActive.Count == 0)
             {
                 Ui.Line("  Board is clear. Enter readings whenever you're ready for the next one.");
-                return;
+                return outcome;
             }
 
-            Ui.Line($"  {readings.Count} reading(s) left over - those were describing something else.", ConsoleColor.Cyan);
+            Ui.Line($"  {stillActive.Count} reading(s) left over - those were describing something else.", ConsoleColor.Cyan);
             Estimate();
+            return outcome;
         }
 
-        static void ClearEverythingAsFound()
+        static string ClearEverythingAsFound()
+        {
+            var active = Active();
+            var kill = new Kill { Id = nextKillId++, Timestamp = Clock.Now, RetiredSeqs = active.Select(r => r.Seq).ToList() };
+            kills.Add(kill);
+            foreach (var r in active) { r.Retired = true; r.RetiredByKillId = kill.Id; }
+
+            Ui.Line($"Kill #{kill.Id}: marked found at an unspecified location and retired {active.Count} reading(s).");
+            Ui.Line("Starting fresh for the next one - 'history' still has everything retired so far.");
+            return $"kill #{kill.Id} confirmed at unspecified location, retired {active.Count} reading(s): {string.Join(" ", kill.RetiredSeqs.Select(s => "#" + s))}";
+        }
+
+        static string DoReset()
         {
             readings.Clear();
+            kills.Clear();
             soloVolumeCache.Clear();
             nextSeq = 1;
-            Ui.Line("Marked found and wiped every reading. Starting fresh.");
+            nextKillId = 1;
+            Ui.Line("Everything cleared - readings and kill history both.");
+            return "board reset (readings and history cleared)";
+        }
+
+        // ---------- history ----------
+
+        static string ShowHistory()
+        {
+            var retired = readings.Where(r => r.Retired).OrderBy(r => r.Seq).ToList();
+
+            Ui.Line();
+            if (kills.Count == 0)
+            {
+                Ui.Line("No kills yet.");
+            }
+            else
+            {
+                foreach (var k in kills)
+                {
+                    Ui.Line($"  Kill #{k.Id}  found {k.PosText}  {k.Timestamp:yyyy-MM-dd HH:mm:ss}", ConsoleColor.Cyan);
+                    if (k.RetiredSeqs.Count == 0)
+                    {
+                        Ui.Line("    retired: none (no reading matched)");
+                    }
+                    else
+                    {
+                        string errText = k.EstimateError.HasValue ? $", estimate was off by {k.EstimateError:0.#} blocks" : "";
+                        string trackText = k.TrackIndex.HasValue ? $" (track {k.TrackIndex})" : "";
+                        Ui.Line($"    retired: {string.Join(" ", k.RetiredSeqs.Select(s => "#" + s))}{trackText}{errText}");
+                    }
+                }
+            }
+
+            Ui.Line();
+            Ui.Line($"  {retired.Count} retired reading(s) total, {Active().Count} still active.", ConsoleColor.DarkGray);
+            Ui.Line();
+            return $"history shown ({kills.Count} kill(s), {retired.Count} retired reading(s))";
         }
 
         // ---------- the estimate ----------
 
-        static void Estimate()
+        static string Estimate()
         {
-            if (readings.Count == 0)
+            var active = Active();
+            if (active.Count == 0)
             {
-                Ui.Line("No readings yet - nothing to estimate.");
-                return;
+                Ui.Line("No active readings - nothing to estimate. 'history' shows what's been retired.");
+                return "estimate: nothing to solve";
             }
 
-            var tracks = Analysis.BuildTracks(readings, metric);
+            var tracks = Analysis.BuildTracks(active, metric);
             foreach (var t in tracks) t.Result = Solver.Solve(t.Readings, metric);
 
             Ui.Line();
-            Ui.Line($"[{readings.Count} reading(s) - {relic.Label} - {metric}]", ConsoleColor.DarkGray);
+            Ui.Line($"[{active.Count} reading(s) - {relic.Label} - {metric}]", ConsoleColor.DarkGray);
 
             if (tracks.Count > 1)
             {
@@ -474,8 +619,9 @@ namespace SpawnLocator
                 Ui.Line("   below; 'conflicts' shows exactly which pairs disagree.");
             }
 
-            foreach (var t in tracks) PrintTrack(t, tracks.Count);
+            foreach (var t in tracks) PrintTrack(t, tracks.Count, active);
             Ui.Line();
+            return $"estimate shown ({tracks.Count} track(s))";
         }
 
         // What the earliest bounded reading of this track allows on its own - the 100% mark
@@ -497,10 +643,10 @@ namespace SpawnLocator
             return 0;
         }
 
-        static void PrintTrack(Track t, int trackCount)
+        static void PrintTrack(Track t, int trackCount, List<Reading> active)
         {
             var r = t.Result!;
-            var conf = Analysis.Confidence(readings, metric);
+            var conf = Analysis.Confidence(active, metric);
             double avgConf = t.Readings.Average(x => conf[x.Seq]);
 
             Ui.Line();
@@ -543,7 +689,7 @@ namespace SpawnLocator
             }
             Ui.Line($"                    ~{r.Volume:N0} blocks³   ({r.Count:N0} candidates @ step {r.Step:0.##})", ConsoleColor.DarkGray);
 
-            // Part 3: even a consistent reading set can leave two separated pockets.
+            // Even a consistent reading set can leave two separated pockets.
             if (r.Blobs.Count > 1)
             {
                 var top = r.Blobs.Take(4).ToList();
@@ -561,33 +707,33 @@ namespace SpawnLocator
             }
         }
 
-        // ---------- export ----------
+        // ---------- session log: export / import / simulate ----------
 
-        static void WriteReport(IEnumerable<string> rest)
+        static string WriteReport(IEnumerable<string> rest)
         {
             string name = string.Join(" ", rest).Trim().Trim('"');
-            if (name.Length == 0)
-                name = $"locator-{DateTime.Now:yyyyMMdd-HHmmss}.txt";
-            else if (!Path.HasExtension(name))
-                name += ".txt";
-
             string path;
-            try
+
+            if (name.Length == 0)
             {
-                path = Path.GetFullPath(name);
+                string dir = Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
+                path = Path.Combine(dir, $"locator-{DateTime.Now:yyyyMMdd-HHmmss}.txt");
             }
-            catch (Exception ex)
+            else
             {
-                Ui.Line($"That isn't a usable filename: {ex.Message}", ConsoleColor.Yellow);
-                return;
+                if (!Path.HasExtension(name)) name += ".txt";
+                try
+                {
+                    path = Path.GetFullPath(name);
+                }
+                catch (Exception ex)
+                {
+                    Ui.Line($"That isn't a usable filename: {ex.Message}", ConsoleColor.Yellow);
+                    return "rejected: bad output filename";
+                }
             }
 
-            // Solve before reporting so the file carries the same numbers the screen would,
-            // rather than whatever was left over from the last estimate.
-            var tracks = Analysis.BuildTracks(readings, metric);
-            foreach (var t in tracks) t.Result = Solver.Solve(t.Readings, metric);
-
-            string report = Export.BuildReport(relic, metric, readings, tracks, BaselineFor);
+            string report = Export.BuildLog(sessions);
 
             try
             {
@@ -596,16 +742,152 @@ namespace SpawnLocator
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 Ui.Line($"Couldn't write that file: {ex.Message}", ConsoleColor.Yellow);
-                return;
+                return "rejected: couldn't write file";
             }
 
-            Ui.Line($"Wrote {readings.Count} reading(s) and {tracks.Count} track(s) to:", ConsoleColor.Green);
+            int totalCommands = sessions.Sum(s => s.Entries.Count);
+            Ui.Line($"Wrote {sessions.Count} session(s), {totalCommands} command(s), to:", ConsoleColor.Green);
             Ui.Line($"  {path}");
+            return $"exported {sessions.Count} session(s) to {path}";
+        }
+
+        static string ImportFile(IEnumerable<string> rest)
+        {
+            if (replaying) return "rejected: cannot import while simulating";
+
+            string name = string.Join(" ", rest).Trim().Trim('"');
+            if (name.Length == 0)
+            {
+                Ui.Line("Usage: import <file>");
+                return "rejected: no filename given to import";
+            }
+
+            string path;
+            try
+            {
+                path = Path.GetFullPath(name);
+            }
+            catch (Exception ex)
+            {
+                Ui.Line($"That isn't a usable path: {ex.Message}", ConsoleColor.Yellow);
+                return "rejected: bad import path";
+            }
+
+            if (!File.Exists(path))
+            {
+                Ui.Line($"No file at: {path}", ConsoleColor.Yellow);
+                return "rejected: import file not found";
+            }
+
+            string text;
+            try
+            {
+                text = File.ReadAllText(path);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                Ui.Line($"Couldn't read that file: {ex.Message}", ConsoleColor.Yellow);
+                return "rejected: couldn't read import file";
+            }
+
+            if (!Import.TryParse(text, out var imported, out string error))
+            {
+                Ui.Line($"Couldn't read that as a Locator session log: {error}", ConsoleColor.Yellow);
+                return "rejected: import parse failed";
+            }
+
+            sessions.AddRange(imported);
+            Ui.Line($"Imported {imported.Count} session(s), {imported.Sum(s => s.Entries.Count)} command(s) total.", ConsoleColor.Green);
+            Ui.Line("Use 'sessions' to see them, 'simulate <n>' to replay one, or 'simulate all' to replay every imported session.");
+            return $"imported {imported.Count} session(s) from {path}";
+        }
+
+        static string ShowSessions()
+        {
+            if (sessions.Count == 0)
+            {
+                Ui.Line("No sessions.");
+                return "sessions shown (0)";
+            }
+
+            var ordered = sessions.OrderBy(s => s.StartedAt).ToList();
+            Ui.Line();
+            for (int i = 0; i < ordered.Count; i++)
+            {
+                var s = ordered[i];
+                string tag = ReferenceEquals(s, currentSession) ? "live" : (s.Imported ? "imported" : "");
+                Ui.Line($"  [{i + 1}] started {s.StartedAt:yyyy-MM-dd HH:mm:ss}  {s.Entries.Count,4} command(s)  {FormatSpan(s.Duration)}  {tag}");
+            }
+            Ui.Line();
+            return $"sessions shown ({ordered.Count})";
+        }
+
+        static string FormatSpan(TimeSpan span) =>
+            span.TotalHours >= 1 ? $"{(int)span.TotalHours}h {span.Minutes}m" : $"{span.Minutes}m {span.Seconds}s";
+
+        static string Simulate(IEnumerable<string> rest)
+        {
+            if (replaying) return "rejected: already simulating";
+
+            string arg = string.Join(" ", rest).Trim().ToLowerInvariant();
+            var ordered = sessions.OrderBy(s => s.StartedAt).ToList();
+            var toReplay = new List<Session>();
+
+            if (arg == "all")
+            {
+                toReplay = ordered.Where(s => s.Imported).ToList();
+                if (toReplay.Count == 0)
+                {
+                    Ui.Line("No imported sessions to simulate. Use 'import <file>' first.", ConsoleColor.Yellow);
+                    return "rejected: nothing imported to simulate";
+                }
+            }
+            else if (int.TryParse(arg, out int n) && n >= 1 && n <= ordered.Count)
+            {
+                toReplay.Add(ordered[n - 1]);
+            }
+            else
+            {
+                Ui.Line("Usage: simulate all   |   simulate <n>   (see 'sessions' for the numbers)");
+                return "rejected: bad simulate usage";
+            }
+
+            ResetBoardForSimulation();
+
+            Ui.Line($"Replaying {toReplay.Count} session(s)...", ConsoleColor.Cyan);
+            replaying = true;
+            try
+            {
+                foreach (var s in toReplay)
+                {
+                    foreach (var e in s.Entries)
+                    {
+                        Clock.Override = e.Timestamp;
+                        try { ProcessLine(e.RawInput); }
+                        finally { Clock.Override = null; }
+                    }
+                }
+            }
+            finally { replaying = false; }
+
+            Ui.Line($"Replay done. {Active().Count} active reading(s), {kills.Count} kill(s).", ConsoleColor.Green);
+            return $"simulated {toReplay.Count} session(s)";
+        }
+
+        static void ResetBoardForSimulation()
+        {
+            readings.Clear();
+            kills.Clear();
+            soloVolumeCache.Clear();
+            nextSeq = 1;
+            nextKillId = 1;
+            relic = Relics.Repaired;
+            metric = DistanceMetric.Euclidean;
         }
 
         // ---------- timer ----------
 
-        static void StartTimer(string[] tokens)
+        static string StartTimer(string[] tokens)
         {
             double? explicitInterval = null;
             if (tokens.Length >= 2 &&
@@ -614,7 +896,7 @@ namespace SpawnLocator
                 if (secs < 1 || secs > 120)
                 {
                     Ui.Line("Interval should be between 1 and 120 seconds.");
-                    return;
+                    return "rejected: interval out of range";
                 }
                 explicitInterval = secs;
             }
@@ -625,6 +907,7 @@ namespace SpawnLocator
             Ui.Line("  When you hear the relic, hit Enter on an empty line (or type 'ping') to re-align.");
             Ui.Line("  It learns the real interval from the gaps between your pings; you don't have to");
             Ui.Line("  catch every sound. 'timer' for the count, 'stoptimer' to end.");
+            return "timer started";
         }
 
         // ---------- help ----------
@@ -635,17 +918,25 @@ namespace SpawnLocator
             Ui.Line("Readings", ConsoleColor.Cyan);
             Ui.Line("  x y z letter         add a reading      e.g.  -12 70 305 C");
             Ui.Line("  x y z nothing        no sound at all (also: none, silent, x, -)");
-            Ui.Line("  list                 every reading with its track and confidence");
-            Ui.Line("  conflicts            which pairs of readings disagree, and by how much");
-            Ui.Line("  delete N             drop reading #N (ids are stable, they never shift)");
+            Ui.Line("  list                 active readings with their track and confidence");
+            Ui.Line("  conflicts            which active readings disagree, and by how much");
+            Ui.Line("  delete N             drop an active reading #N (retired ones can't be deleted, only 'reset')");
             Ui.Line("  estimate / tracks    re-solve without adding anything");
-            Ui.Line("  output [file]        write the whole board to a text file (default: timestamped)");
-            Ui.Line("  reset                wipe everything");
+            Ui.Line("  reset                wipe everything - readings AND kill history");
             Ui.Line();
             Ui.Line("Finding one", ConsoleColor.Cyan);
-            Ui.Line("  found x y z          confirm a kill; retires only the readings that pointed there,");
-            Ui.Line("  x y z found          leaving anything that was describing a different skeleton");
-            Ui.Line("  found                wipe the board entirely");
+            Ui.Line("  found x y z          confirm a kill; retires (not deletes) the readings that pointed there");
+            Ui.Line("  x y z found          same thing, other argument order");
+            Ui.Line("  found                retire every active reading under an 'unspecified location' kill");
+            Ui.Line("  history              every retired reading and every kill, in order");
+            Ui.Line();
+            Ui.Line("Session log", ConsoleColor.Cyan);
+            Ui.Line("  output [file]        save every command you've typed this run to a text file");
+            Ui.Line("                       (default: a timestamped file on your Desktop)");
+            Ui.Line("  import <file>        load a previously saved session log");
+            Ui.Line("  sessions             list every session currently held (this run + anything imported)");
+            Ui.Line("  simulate all         replay every imported session, reconstructing the board");
+            Ui.Line("  simulate <n>         replay just one session (see 'sessions' for the number)");
             Ui.Line();
             Ui.Line("Relic", ConsoleColor.Cyan);
             Ui.Line("  relic g1 / gii / tier3 / refined      switch relic grade");

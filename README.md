@@ -43,13 +43,17 @@ entered with, so an old `D` never silently changes meaning.
 | Command | What it does |
 |---|---|
 | `x y z letter` | Add a reading |
-| `list` | Every reading with its track and confidence |
-| `conflicts` | Which pairs of readings disagree, and by how much |
-| `delete N` | Drop reading #N — ids are stable and never shift |
+| `list` | Every **active** reading with its track and confidence |
+| `conflicts` | Which active readings disagree, and by how much |
+| `delete N` | Drop an active reading #N — refuses if it's already retired |
 | `estimate` / `tracks` | Re-solve without adding anything |
-| `output [file]` | Write the whole board to a text file |
-| `found x y z` / `x y z found` | Confirm a kill (see below) |
-| `reset` | Wipe everything |
+| `found x y z` / `x y z found` | Confirm a kill — retires, never deletes (see below) |
+| `history` | Every retired reading and every kill, in order |
+| `reset` | Wipe everything — readings **and** kill history |
+| `output [file]` | Save this run's command log to a text file (default: your Desktop) |
+| `import <file>` | Load a previously saved session log |
+| `sessions` | List every session currently held (this run + anything imported) |
+| `simulate all` / `simulate <n>` | Replay imported sessions, reconstructing the board |
 | `relic <spec>` / `bands` | Change relic / show the band table |
 | `metric euclidean｜chebyshev` | Round vs blocky rings |
 | `starttimer [secs]` / `ping` / `timer` / `stoptimer` | Looping sound countdown + cycle count |
@@ -95,36 +99,80 @@ second fresh reading that agrees with it and both climb while the four older one
 because the two newest weights dominate the sum. That's deliberate — if you've walked to
 a different skeleton, the newest readings are the ones describing where you actually are.
 
-### Export
+### Found, and retiring instead of deleting
 
-Every reading records the wall-clock moment it was entered — shown as `HH:mm:ss` in
-`list`, and as a full timestamp in the export.
+`found x y z` used to delete the matched readings outright. It doesn't anymore — a
+mistaken match (a near-miss typo that still happens to land in the valid region) used
+to be unrecoverable, and every confirmed kill's calibration data (the real position,
+plus the readings that led to it) was thrown away the instant it was produced.
 
-`output` writes the whole board to a text file — `output` for a timestamped name in the
-current directory, or `output myfile` for a specific one. It re-solves first, so the file
-always carries current numbers rather than whatever the last estimate left behind.
+Instead, `found` **retires** the readings consistent with that spot — they drop out of
+`list`/`estimate`/`conflicts` and stop influencing the live solve, but they aren't gone.
+A `history` command shows every retired reading and every kill: position (or
+`(unspecified)` for a bare `found`), timestamp, which readings it retired, and how far
+off the estimate was. Ids are never reused, and `delete N` refuses to touch an already-
+retired reading — `reset` is the only way to wipe history, and it wipes everything.
 
-The report holds the band table, every reading with its timestamp, track and confidence,
-the conflict list, and each track's estimate, region, search-space percentage and **every**
-pocket (the on-screen `estimate` caps the pocket list at 4 to fit the terminal; the file
-doesn't cap anything) — plus a **tab-separated block** that pastes straight into a
-spreadsheet:
+Anything left un-matched after a `found` was describing a different skeleton, so it
+stays active and re-solves on its own.
+
+### Session log
+
+`output` no longer writes a results report — it writes a **replayable command log**:
+every command you typed this run, verbatim, with a timestamp and a short outcome.
+Nothing computed goes in it — no estimate, no region, no candidate counts, no pockets —
+because all of that is 100% reproducible by replaying the raw commands back through the
+app's own parser. Storing it would just be stale duplication the moment another reading
+comes in.
 
 ```
-id	timestamp	x	y	z	band	min	max	track	confidence	relic
-1	2026-08-01 22:34:24	0	-1319	-200	C	51	100	1	0.771	Repaired Ghost Seek
-6	2026-08-01 22:41:09	1900	-500	2000	F	201		2	1	Repaired Ghost Seek
+=== Ghost Seek Locator session log ===
+Format-Version 1
+Generated       2026-08-02 14:03:11
+Sessions        1
+Commands        3
+
+--- Session 1 ---
+Started   2026-08-01 20:15:03.112
+Duration  00:42:17
+Commands  3
+2026-08-01 20:15:03.112	relic gii	relic set to Grade II - Repaired Ghost Seek
+2026-08-01 20:15:41.900	120 64 -30 C	reading #1 added
+2026-08-01 20:57:20.331	found 0 -1319 -300	kill #1 confirmed at (0,-1319,-300), retired #1
+--- end session 1 ---
 ```
 
-An empty `max` means the reading was silent, so there's no upper bound. The file is
-plain ASCII, UTF-8 without a BOM, and every number is invariant-culture — so it parses
-the same everywhere, the same way the program parses your input.
+Every command is recorded — successful, rejected, read-only or not — so the file doubles
+as an honest usage log if you hand the app to someone else: what they typed, what got
+rejected, whether they used `found` correctly. **The app says so on startup**, before
+anything is entered — nothing is collected covertly, and nothing ever leaves the machine
+unless `output` is run explicitly.
 
-### Found
+`output` with no filename saves a timestamped file to your **Desktop**; `output myfile`
+saves to a specific path exactly as before. The file is plain ASCII, invariant-culture,
+UTF-8 without a BOM — tab-separated entry lines so it round-trips reliably, but still
+readable if you just open it.
 
-`found x y z` retires **only** the readings consistent with that spot, and reports how
-far off the estimate was. Anything left over was describing a different skeleton, so it
-stays on the board and re-solves on its own. Bare `found` wipes everything.
+### Import + simulate
+
+Take a saved log back into the app and replay it:
+
+```
+> import myfile.txt
+Imported 1 session(s), 3 command(s) total.
+> sessions
+  [1] started 2026-08-01 20:15:03   3 command(s)  0m 42s  imported
+> simulate 1
+```
+
+`simulate <n>` replays one session; `simulate all` replays every imported session in
+order, merged into one board. Either way it resets the board first, then feeds each
+logged line back through the exact same command parser live typing uses — so the
+reconstructed state (readings, tracks, kills, everything) comes out identical to what
+was live at export time. Replayed lines keep their **original** timestamps rather than
+being stamped "now," so historical chronology survives the round trip, and they aren't
+re-logged into your current session — they already live permanently in the session they
+came from.
 
 ### Sound loop
 
