@@ -195,6 +195,18 @@
   </div>
 
   <div class="panel">
+    <h2>Advanced <span class="hint">type any console command directly — same parser, same vocabulary</span></h2>
+    <div class="row">
+      <div class="field grow">
+        <label for="cmdInput">Command</label>
+        <input id="cmdInput" type="text" placeholder="e.g. 120 64 -30 C, found 0 -1319 -300, list, bands, history">
+      </div>
+      <button id="cmdRunBtn" class="secondary">Run</button>
+    </div>
+    <div id="cmdOut" class="log-out" style="display:none;"></div>
+  </div>
+
+  <div class="panel">
     <h2>Reset</h2>
     <div class="row">
       <button id="resetBtn" class="danger">Wipe everything (readings and history)</button>
@@ -346,7 +358,7 @@ function buildTracks(readings, metric) {
 /* Solver: bounding-box intersection, grid sample, pocket flood-fill       */
 /* ---------------------------------------------------------------------- */
 
-const TARGET_SAMPLES = 750000; // tuned down from the console's 2,000,000 to stay instant in a browser tab
+const TARGET_SAMPLES = 2000000; // matches the console app exactly - no precision traded away for the UI
 
 function solve(group, metric) {
   const result = { boxEmpty: false, bounded: false, count: 0, step: 0, volume: 0,
@@ -441,6 +453,63 @@ function findBlobs(cells) {
 function blobSeparation(a, b) { return Math.hypot(a.cx - b.cx, a.cy - b.cy, a.cz - b.cz); }
 
 /* ---------------------------------------------------------------------- */
+/* Solving runs on a background worker, not the main thread. At the full   */
+/* 2,000,000-sample target (matching the console app exactly - nothing     */
+/* traded away) a single solve measured ~250-300ms; on the main thread     */
+/* that freezes clicks and typing for the duration. A worker keeps the UI  */
+/* responsive while the computation itself stays exactly as precise.       */
+/* ---------------------------------------------------------------------- */
+
+// .toString() only copies each function's own body - TARGET_SAMPLES is a free variable
+// `solve` closes over from the outer scope, so it has to be spliced in explicitly too or
+// the worker throws a ReferenceError the moment it actually runs solve().
+const SOLVER_WORKER_SOURCE = `
+  const TARGET_SAMPLES = ${TARGET_SAMPLES};
+  ${distanceTo.toString()}
+  ${readingSatisfies.toString()}
+  ${solve.toString()}
+  ${findBlobs.toString()}
+  self.onmessage = (e) => {
+    const { id, group, metric } = e.data;
+    try {
+      self.postMessage({ id, result: solve(group, metric) });
+    } catch (err) {
+      self.postMessage({ id, error: String(err && err.stack || err) });
+    }
+  };
+`;
+
+const solverWorker = new Worker(URL.createObjectURL(new Blob([SOLVER_WORKER_SOURCE], { type: "application/javascript" })));
+const pendingSolves = new Map();
+let solveReqId = 0;
+solverWorker.onmessage = e => {
+  const { id, result, error } = e.data;
+  const pending = pendingSolves.get(id);
+  if (!pending) return;
+  pendingSolves.delete(id);
+  if (error) pending.reject(new Error(error)); else pending.resolve(result);
+};
+solverWorker.onerror = err => {
+  // A syntax/setup error in the worker script itself (not a per-request error) - reject
+  // every request still waiting rather than leaving them hanging forever.
+  for (const { reject } of pendingSolves.values()) reject(err);
+  pendingSolves.clear();
+};
+
+// Only the fields the solver actually reads - keeps the postMessage payload small and avoids
+// cloning anything irrelevant (timestamps, retired flags, etc).
+function solveAsync(group, metric) {
+  return new Promise((resolve, reject) => {
+    const id = ++solveReqId;
+    pendingSolves.set(id, { resolve, reject });
+    solverWorker.postMessage({
+      id, metric,
+      group: group.map(r => ({ x: r.x, y: r.y, z: r.z, minDist: r.minDist, maxDist: r.maxDist })),
+    });
+  });
+}
+
+/* ---------------------------------------------------------------------- */
 /* Formatting helpers                                                      */
 /* ---------------------------------------------------------------------- */
 
@@ -489,18 +558,18 @@ function recordActivity(rawInput, outcome) {
 /* by either side can be imported and replayed by the other.               */
 /* ---------------------------------------------------------------------- */
 
-function dispatch(line) {
-  const outcome = dispatchCore(line);
+async function dispatch(line) {
+  const outcome = await dispatchCore(line);
   if (!state.replaying) recordActivity(line, outcome);
   return outcome;
 }
 
-function dispatchCore(line) {
+async function dispatchCore(line) {
   const tokens = line.trim().split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return "no-op";
   const head = tokens[0].toLowerCase();
 
-  if (tokens.length === 4 && tokens[3].toLowerCase() === "found") return handleFound(tokens[0], tokens[1], tokens[2]);
+  if (tokens.length === 4 && tokens[3].toLowerCase() === "found") return await handleFound(tokens[0], tokens[1], tokens[2]);
 
   switch (head) {
     case "relic": case "tier": case "seeker": case "seek":
@@ -510,7 +579,7 @@ function dispatchCore(line) {
     case "reset":
       return doReset();
     case "found":
-      if (tokens.length === 4) return handleFound(tokens[1], tokens[2], tokens[3]);
+      if (tokens.length === 4) return await handleFound(tokens[1], tokens[2], tokens[3]);
       if (tokens.length === 1) return clearEverythingAsFound();
       return "rejected: bad 'found' usage";
     case "delete": case "remove":
@@ -585,7 +654,7 @@ function deleteReading(idStr) {
   return `reading #${id} deleted`;
 }
 
-function handleFound(sx, sy, sz) {
+async function handleFound(sx, sy, sz) {
   const fx = Number(sx), fy = Number(sy), fz = Number(sz);
   if (!isFinite(fx) || !isFinite(fy) || !isFinite(fz)) return "rejected: bad coordinates for 'found'";
 
@@ -600,7 +669,7 @@ function handleFound(sx, sy, sz) {
   }
 
   const owner = [...tracks].sort((a, b) => b.readings.filter(r => matched.includes(r)).length - a.readings.filter(r => matched.includes(r)).length)[0];
-  owner.result = solve(owner.readings, state.metric);
+  owner.result = await solveAsync(owner.readings, state.metric);
   let err = null;
   if (owner.result.bounded && owner.result.count > 0)
     err = Math.hypot(fx - owner.result.cx, fy - owner.result.cy, fz - owner.result.cz);
@@ -634,11 +703,11 @@ function resetBoardForSimulation() {
   state.relic = RELICS.repaired; state.metric = "Euclidean";
 }
 
-function baselineFor(track) {
+async function baselineFor(track) {
   for (const r of track.readings) {
     if (isSilentReading(r)) continue;
     if (!state.soloVolumeCache.has(r.seq)) {
-      const solo = solve([r], state.metric);
+      const solo = await solveAsync([r], state.metric);
       state.soloVolumeCache.set(r.seq, solo.bounded ? solo.volume : 0);
     }
     const v = state.soloVolumeCache.get(r.seq);
@@ -745,7 +814,7 @@ function importLog(text) {
   return { ok: true, sessions };
 }
 
-function simulateSessions(list) {
+async function simulateSessions(list) {
   if (state.replaying) return "rejected: already simulating";
   if (list.length === 0) return "rejected: nothing to simulate";
   resetBoardForSimulation();
@@ -753,7 +822,7 @@ function simulateSessions(list) {
   try {
     for (const s of list) for (const e of s.entries) {
       state.clockOverride = e.timestamp;
-      try { dispatch(e.rawInput); } finally { state.clockOverride = null; }
+      try { await dispatch(e.rawInput); } finally { state.clockOverride = null; }
     }
   } finally { state.replaying = false; }
   return `simulated ${list.length} session(s)`;
@@ -842,9 +911,10 @@ function ensureTimerTick() {
 /* Rendering                                                               */
 /* ---------------------------------------------------------------------- */
 
-function renderAll() {
-  renderRelicUI(); renderResults(); renderActiveTable(); renderConflicts();
+async function renderAll() {
+  renderRelicUI(); renderActiveTable(); renderConflicts();
   renderHistory(); renderSessions(); renderTimer();
+  await renderResults();
 }
 
 function renderRelicUI() {
@@ -869,7 +939,12 @@ function renderRelicUI() {
     `<option value="${b.letter}">${b.letter} - ${bandRangeText(b)}</option>`).join("");
 }
 
-function renderResults() {
+// The actual geometry solve runs on a worker (see solveAsync), so this is async and shows a
+// brief "Solving..." placeholder for the ~200-300ms that takes at full precision - everything
+// else on the page (the active-readings table, conflicts, history) has already re-rendered by
+// the time this call even starts, since renderAll() awaits this one last.
+let resultsRequestToken = 0;
+async function renderResults() {
   const active = activeReadings();
   const hint = document.getElementById("resultsHint");
   const body = document.getElementById("resultsBody");
@@ -878,8 +953,15 @@ function renderResults() {
     body.innerHTML = `<p class="empty">No active readings yet. Add one above.</p>`;
     return;
   }
+  const requestToken = ++resultsRequestToken;
+  body.innerHTML = `<p class="empty">Solving...</p>`;
+
   const tracks = buildTracks(active, state.metric);
-  for (const t of tracks) t.result = solve(t.readings, state.metric);
+  for (const t of tracks) t.result = await solveAsync(t.readings, state.metric);
+  // If another add/delete/found happened while this was in flight, drop this stale result
+  // rather than overwrite the newer render with old numbers.
+  if (requestToken !== resultsRequestToken) return;
+
   const conf = computeConfidence(active, state.metric);
   hint.textContent = `${active.length} reading(s) - ${state.relic.label} - ${state.metric}`;
 
@@ -888,11 +970,12 @@ function renderResults() {
     html += `<div class="msg warn">Your readings split into ${tracks.length} groups that can't all describe one skeleton.
       Most likely you've picked up two separate spawns - each group is solved on its own below.</div>`;
   }
-  for (const t of tracks) html += renderTrackCard(t, tracks.length, conf);
+  for (const t of tracks) html += await renderTrackCard(t, tracks.length, conf);
+  if (requestToken !== resultsRequestToken) return;
   body.innerHTML = html;
 }
 
-function renderTrackCard(t, trackCount, conf) {
+async function renderTrackCard(t, trackCount, conf) {
   const r = t.result;
   const avgConf = t.readings.reduce((s, x) => s + conf.get(x.seq), 0) / t.readings.length;
   const title = trackCount > 1 ? `Track ${t.index}` : "Solution";
@@ -911,7 +994,7 @@ function renderTrackCard(t, trackCount, conf) {
     html += `<div class="kv" style="margin-top:8px;">
       <div class="k">Estimate</div><div class="mono">(${fmt(r.cx,1)}, ${fmt(r.cy,1)}, ${fmt(r.cz,1)})</div>
       <div class="k">Region</div><div class="mono">X[${fmt(r.minX,1)}, ${fmt(r.maxX,1)}] Y[${fmt(r.minY,1)}, ${fmt(r.maxY,1)}] Z[${fmt(r.minZ,1)}, ${fmt(r.maxZ,1)}]</div>`;
-    const baseline = baselineFor(t);
+    const baseline = await baselineFor(t);
     if (baseline > 0) {
       const frac = r.volume / baseline;
       html += `<div class="k">Search space</div><div>${barHtml(Math.min(1,frac))}<span class="pct">${fmt(frac*100,2)}% of reading #${t.readings[0].seq} alone</span></div>`;
@@ -1034,57 +1117,106 @@ function flashMsg(elId, text, kind) {
 /* Wiring                                                                  */
 /* ---------------------------------------------------------------------- */
 
+// Solving is async now (it runs on a worker), so an action button stays disabled for the
+// ~200-300ms a solve takes - otherwise a double-click could fire two handleFound calls that
+// both read the board before either has committed its retirements, racing each other.
+const BUSY_BUTTON_IDS = ["addReadingBtn", "confirmFoundBtn", "bareFoundBtn", "resetBtn",
+  "simulateSelectedBtn", "simulateAllBtn", "relicSelect", "metricSelect", "cmdRunBtn"];
+async function withBusy(fn) {
+  const els = BUSY_BUTTON_IDS.map(id => document.getElementById(id));
+  els.forEach(el => el.disabled = true);
+  try { await fn(); } finally { els.forEach(el => el.disabled = false); }
+}
+
 function init() {
   state.currentSession = { startedAt: clockNow(), entries: [], imported: false };
   state.sessions.push(state.currentSession);
 
-  document.getElementById("relicSelect").addEventListener("change", e => {
-    dispatch(`relic ${e.target.value}`); renderAll();
-  });
-  document.getElementById("metricSelect").addEventListener("change", e => {
-    dispatch(`metric ${e.target.value}`); renderAll();
-  });
+  document.getElementById("relicSelect").addEventListener("change", e => withBusy(async () => {
+    await dispatch(`relic ${e.target.value}`); await renderAll();
+  }));
+  document.getElementById("metricSelect").addEventListener("change", e => withBusy(async () => {
+    await dispatch(`metric ${e.target.value}`); await renderAll();
+  }));
 
-  document.getElementById("addReadingBtn").addEventListener("click", () => {
+  document.getElementById("addReadingBtn").addEventListener("click", () => withBusy(async () => {
     const x = document.getElementById("rx").value, y = document.getElementById("ry").value,
           z = document.getElementById("rz").value, band = document.getElementById("rband").value;
     if (x === "" || y === "" || z === "") { flashMsg("addReadingMsg", "Enter X, Y and Z.", "warn"); return; }
-    const outcome = dispatch(`${x} ${y} ${z} ${band}`);
+    const outcome = await dispatch(`${x} ${y} ${z} ${band}`);
     const ok = outcome.startsWith("reading");
     flashMsg("addReadingMsg", outcome, ok ? "good" : "warn");
-    if (ok) { document.getElementById("rx").value = ""; document.getElementById("ry").value = ""; document.getElementById("rz").value = ""; document.getElementById("rx").focus(); }
-    renderAll();
-  });
+    if (ok) { document.getElementById("rx").value = ""; document.getElementById("ry").value = ""; document.getElementById("rz").value = ""; }
+    await renderAll();
+    if (ok) document.getElementById("rx").focus();
+  }));
   document.getElementById("addReadingRow").addEventListener("keydown", e => {
     if (e.key === "Enter") document.getElementById("addReadingBtn").click();
   });
 
-  document.getElementById("confirmFoundBtn").addEventListener("click", () => {
+  document.getElementById("confirmFoundBtn").addEventListener("click", () => withBusy(async () => {
     const x = document.getElementById("fx").value, y = document.getElementById("fy").value, z = document.getElementById("fz").value;
     if (x === "" || y === "" || z === "") { flashMsg("foundMsg", "Enter X, Y and Z.", "warn"); return; }
-    const outcome = dispatch(`found ${x} ${y} ${z}`);
+    const outcome = await dispatch(`found ${x} ${y} ${z}`);
     flashMsg("foundMsg", outcome, outcome.includes("no reading matched") ? "warn" : "good");
-    renderAll();
-  });
-  document.getElementById("bareFoundBtn").addEventListener("click", () => {
-    const outcome = dispatch("found");
+    await renderAll();
+  }));
+  document.getElementById("bareFoundBtn").addEventListener("click", () => withBusy(async () => {
+    const outcome = await dispatch("found");
     flashMsg("foundMsg", outcome, "good");
-    renderAll();
-  });
+    await renderAll();
+  }));
 
-  document.getElementById("resetBtn").addEventListener("click", () => {
+  document.getElementById("resetBtn").addEventListener("click", () => withBusy(async () => {
     if (!confirm("Wipe every reading and all kill history? This can't be undone.")) return;
-    dispatch("reset"); renderAll();
-  });
+    await dispatch("reset"); await renderAll();
+  }));
 
-  document.getElementById("saveLogBtn").addEventListener("click", () => {
+  const runCmd = () => withBusy(async () => {
+    const input = document.getElementById("cmdInput");
+    const line = input.value.trim();
+    if (!line) return;
+    const outcome = await dispatch(line);
+    const out = document.getElementById("cmdOut");
+    out.style.display = "block";
+    out.textContent = `> ${line}\n${outcome}`;
+    input.value = "";
+    await renderAll();
+    input.focus();
+  });
+  document.getElementById("cmdRunBtn").addEventListener("click", runCmd);
+  document.getElementById("cmdInput").addEventListener("keydown", e => { if (e.key === "Enter") runCmd(); });
+
+  document.getElementById("saveLogBtn").addEventListener("click", async () => {
     const text = buildLog(state.sessions);
-    dispatch("output");
+    await dispatch("output");
+    const now = new Date();
+    const filename = `locator-${now.getFullYear()}${pad(now.getMonth()+1,2)}${pad(now.getDate(),2)}-${pad(now.getHours(),2)}${pad(now.getMinutes(),2)}${pad(now.getSeconds(),2)}.txt`;
+
+    // Chromium supports a real "Save As" picker - lets you choose exactly where it goes,
+    // closer to the console app's own explicit-path option. Falls back to a plain download
+    // (browser's configured downloads folder) on Firefox/Safari, which don't support it.
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [{ description: "Locator session log", accept: { "text/plain": [".txt"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(text);
+        await writable.close();
+        renderSessions();
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return; // user cancelled the picker
+        // fall through to the plain-download path below on any other failure
+      }
+    }
+
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const a = document.createElement("a");
-    const now = new Date();
     a.href = URL.createObjectURL(blob);
-    a.download = `locator-${now.getFullYear()}${pad(now.getMonth()+1,2)}${pad(now.getDate(),2)}-${pad(now.getHours(),2)}${pad(now.getMinutes(),2)}${pad(now.getSeconds(),2)}.txt`;
+    a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     URL.revokeObjectURL(a.href);
     renderSessions();
@@ -1107,42 +1239,42 @@ function init() {
     e.target.value = "";
   });
 
-  document.getElementById("simulateSelectedBtn").addEventListener("click", () => {
+  document.getElementById("simulateSelectedBtn").addEventListener("click", () => withBusy(async () => {
     const ordered = [...state.sessions].sort((a, b) => a.startedAt - b.startedAt);
     if (state.selectedSessionIdx == null || !ordered[state.selectedSessionIdx]) {
       document.getElementById("logOut").style.display = "block";
       document.getElementById("logOut").textContent = "Pick a session from the list first.";
       return;
     }
-    runSimulation([ordered[state.selectedSessionIdx]]);
-  });
-  document.getElementById("simulateAllBtn").addEventListener("click", () => {
+    await runSimulation([ordered[state.selectedSessionIdx]]);
+  }));
+  document.getElementById("simulateAllBtn").addEventListener("click", () => withBusy(async () => {
     const imported = state.sessions.filter(s => s.imported).sort((a, b) => a.startedAt - b.startedAt);
     if (imported.length === 0) {
       document.getElementById("logOut").style.display = "block";
       document.getElementById("logOut").textContent = "No imported sessions to simulate - load a file first.";
       return;
     }
-    runSimulation(imported);
-  });
+    await runSimulation(imported);
+  }));
 
-  document.getElementById("startTimerBtn").addEventListener("click", () => {
+  document.getElementById("startTimerBtn").addEventListener("click", async () => {
     const secs = Number(document.getElementById("timerSecs").value) || 20;
-    dispatch(`starttimer ${secs}`); renderTimer();
+    await dispatch(`starttimer ${secs}`); renderTimer();
   });
-  document.getElementById("pingBtn").addEventListener("click", () => { dispatch("ping"); renderTimer(); });
-  document.getElementById("stopTimerBtn").addEventListener("click", () => { dispatch("stoptimer"); renderTimer(); });
+  document.getElementById("pingBtn").addEventListener("click", async () => { await dispatch("ping"); renderTimer(); });
+  document.getElementById("stopTimerBtn").addEventListener("click", async () => { await dispatch("stoptimer"); renderTimer(); });
 
   renderAll();
 }
 
-function runSimulation(sessionList) {
-  const outcome = simulateSessions(sessionList);
+async function runSimulation(sessionList) {
+  const outcome = await simulateSessions(sessionList);
   const out = document.getElementById("logOut");
   out.style.display = "block";
   out.textContent = `${outcome}. ${activeReadings().length} active reading(s), ${state.kills.length} kill(s).`;
   state.selectedSessionIdx = null;
-  renderAll();
+  await renderAll();
 }
 
 document.addEventListener("DOMContentLoaded", init);
