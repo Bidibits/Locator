@@ -7,7 +7,7 @@ using System.Text;
 
 namespace SpawnLocator
 {
-    class Program
+    partial class Program
     {
         static readonly List<Reading> readings = new List<Reading>();
         static readonly List<Kill> kills = new List<Kill>();
@@ -58,7 +58,7 @@ namespace SpawnLocator
             Ui.Line("Enter readings as:  x y z letter        e.g.  120 64 -30 C");
             Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z | history");
             Ui.Line("          output | import | sessions | simulate | starttimer | ping | stoptimer");
-            Ui.Line("          relic | bands | metric | reset | help | exit");
+            Ui.Line("          relic | bands | metric | reset | web | help | exit");
             Ui.Line();
 
             while (true)
@@ -75,36 +75,50 @@ namespace SpawnLocator
         }
 
         // Shared by the live loop and by replay, so a blank Enter (ping) behaves identically
-        // either way and both paths log through the same place.
+        // either way and both paths log through the same place. Locked for the same reason
+        // Dispatch() is - a browser request logging an entry at the same moment must not race
+        // this appending to the same activity list.
         static bool ProcessLine(string line)
         {
             if (line.Length == 0)
             {
                 string outcome;
-                if (replaying)
+                lock (commandLock)
                 {
-                    outcome = "ping (replayed, timer not touched)";
+                    if (replaying)
+                    {
+                        outcome = "ping (replayed, timer not touched)";
+                    }
+                    else if (timer.Running)
+                    {
+                        outcome = timer.Ping();
+                        Ui.Line("  " + outcome, ConsoleColor.DarkCyan);
+                    }
+                    else
+                    {
+                        outcome = "no-op, timer not running";
+                    }
+                    if (!replaying) RecordActivity(line, outcome);
                 }
-                else if (timer.Running)
-                {
-                    outcome = timer.Ping();
-                    Ui.Line("  " + outcome, ConsoleColor.DarkCyan);
-                }
-                else
-                {
-                    outcome = "no-op, timer not running";
-                }
-                if (!replaying) RecordActivity(line, outcome);
                 return true;
             }
-            return Dispatch(line);
+            var (cont, _) = Dispatch(line);
+            return cont;
         }
 
-        static bool Dispatch(string line)
+        // Locked so a browser request (see Program.Web.cs) and a keystroke here can never both be
+        // mutating readings/kills/sessions - or both appending to the same activity log - at once.
+        // Returns the outcome too (not just whether to keep running) so Program.Web.cs can report
+        // it back to the browser exactly as logged.
+        static (bool cont, string outcome) Dispatch(string line)
         {
-            var (cont, outcome) = DispatchCore(line);
-            if (!replaying) RecordActivity(line, outcome);
-            return cont;
+            bool cont; string outcome;
+            lock (commandLock)
+            {
+                (cont, outcome) = DispatchCore(line);
+                if (!replaying) RecordActivity(line, outcome);
+            }
+            return (cont, outcome);
         }
 
         static void RecordActivity(string rawInput, string outcome)
@@ -136,6 +150,16 @@ namespace SpawnLocator
                 case "bands":
                     Relics.PrintTable(relic);
                     return (true, "band table shown");
+
+                case "web":
+                    {
+                        string outcome = StartWeb();
+                        Ui.Line(outcome.StartsWith("rejected") ? outcome : $"Web UI running - opened {outcome.Substring("web server started at ".Length)} in your browser.",
+                            outcome.StartsWith("rejected") ? ConsoleColor.Yellow : ConsoleColor.Green);
+                        if (!outcome.StartsWith("rejected"))
+                            Ui.Line("  The terminal still works too - both stay in sync, same board, same session log.", ConsoleColor.DarkGray);
+                        return (true, outcome);
+                    }
 
                 case "relic":
                 case "tier":
@@ -942,6 +966,10 @@ namespace SpawnLocator
             Ui.Line("  relic g1 / gii / tier3 / refined      switch relic grade");
             Ui.Line("  bands                                 show the current band table");
             Ui.Line("  metric euclidean | chebyshev          round vs blocky rings");
+            Ui.Line();
+            Ui.Line("Browser UI", ConsoleColor.Cyan);
+            Ui.Line("  web                  start a local web UI for this session and open it in your browser -");
+            Ui.Line("                       same board, same solve, works alongside the terminal");
             Ui.Line();
             Ui.Line("Sound timer", ConsoleColor.Cyan);
             Ui.Line("  starttimer [secs]    start the loop (default 20s); it refills and counts each cycle");

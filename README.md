@@ -57,6 +57,22 @@ entered with, so an old `D` never silently changes meaning.
 | `relic <spec>` / `bands` | Change relic / show the band table |
 | `metric euclidean｜chebyshev` | Round vs blocky rings |
 | `starttimer [secs]` / `ping` / `timer` / `stoptimer` | Looping sound countdown + cycle count |
+| `web` | Start a local browser UI for this session (see below) |
+
+## Browser UI
+
+Type `web` at any time and the app starts a small local web server and opens your default
+browser to it. This isn't a second implementation — every click in the browser runs through
+the exact same command dispatcher the terminal uses, on the same running process, so there's
+one engine and one set of state. The terminal keeps working the whole time; add a reading in
+one, refresh the other, they're both looking at the same board.
+
+Nothing is exposed outside this machine — the server only listens on `127.0.0.1`, on a random
+free port chosen each time. Closing the browser tab doesn't stop the terminal, and vice versa;
+the process keeps running (and the server with it) until you `exit` the terminal.
+
+The browser page also has an always-available command box wired to the same dispatcher, so
+anything the terminal understands is reachable there too, not just what has a dedicated button.
 
 ## What it does beyond averaging
 
