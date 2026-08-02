@@ -85,7 +85,7 @@
 
   <header>
     <h1>Ghost Seek Locator</h1>
-    <p class="tagline">Triangulates a Praying Skeleton from Ghost Seek relic sound readings.</p>
+    <p class="tagline">Triangulates a Praying Skeleton from Ghost Seek sound readings.</p>
   </header>
 
   <div class="notice">
@@ -95,11 +95,11 @@
   </div>
 
   <div class="panel">
-    <h2>Relic <span class="hint">choose what you're holding</span></h2>
+    <h2>Ghost Seeker <span class="hint">choose what you're holding</span></h2>
     <div class="row">
       <div class="field grow">
-        <label for="relicSelect">Grade</label>
-        <select id="relicSelect">
+        <label for="seekerSelect">Grade</label>
+        <select id="seekerSelect">
           <option value="giii">Grade III - Makeshift Ghost Seek</option>
           <option value="gii">Grade II - Repaired Ghost Seek</option>
           <option value="gi">Grade I - Refined Ghost Seek</option>
@@ -265,16 +265,16 @@ function flashMsg(elId, text, kind) {
 /* ---------------------------------------------------------------------- */
 
 function render(s) {
-  renderRelic(s); renderResults(s); renderActiveTable(s); renderConflicts(s);
+  renderSeeker(s); renderResults(s); renderActiveTable(s); renderConflicts(s);
   renderHistory(s); renderSessions(s); renderTimer(s);
 }
 
-function renderRelic(s) {
-  document.getElementById("relicSelect").value = s.relic.token;
+function renderSeeker(s) {
+  document.getElementById("seekerSelect").value = s.seeker.token;
   document.getElementById("metricSelect").value = s.metric === "Chebyshev" ? "chebyshev" : "euclidean";
-  document.getElementById("bandTable").innerHTML = s.relic.bands.map(b =>
+  document.getElementById("bandTable").innerHTML = s.seeker.bands.map(b =>
     `<span class="band-chip"><strong>${b.letter}</strong> &nbsp;${escapeHtml(b.rangeText)}</span>`).join("");
-  document.getElementById("rband").innerHTML = s.relic.bands.map(b =>
+  document.getElementById("rband").innerHTML = s.seeker.bands.map(b =>
     `<option value="${b.letter}">${b.letter} - ${escapeHtml(b.rangeText)}</option>`).join("");
 }
 
@@ -286,7 +286,7 @@ function renderResults(s) {
     body.innerHTML = `<p class="empty">No active readings yet. Add one above.</p>`;
     return;
   }
-  hint.textContent = `${s.active.length} reading(s) - ${s.relic.label} - ${s.metric}`;
+  hint.textContent = `${s.active.length} reading(s) - ${s.seeker.label} - ${s.metric}`;
   let html = "";
   if (s.tracks.length > 1) {
     html += `<div class="msg warn">Your readings split into ${s.tracks.length} groups that can't all describe one skeleton.
@@ -400,7 +400,7 @@ function renderTimer(s) {
 /* ---------------------------------------------------------------------- */
 
 const BUSY_BUTTON_IDS = ["addReadingBtn", "confirmFoundBtn", "bareFoundBtn", "resetBtn",
-  "simulateSelectedBtn", "simulateAllBtn", "relicSelect", "metricSelect", "cmdRunBtn"];
+  "simulateSelectedBtn", "simulateAllBtn", "seekerSelect", "metricSelect", "cmdRunBtn"];
 async function withBusy(fn) {
   const els = BUSY_BUTTON_IDS.map(id => document.getElementById(id));
   els.forEach(el => el.disabled = true);
@@ -408,7 +408,7 @@ async function withBusy(fn) {
 }
 
 function init() {
-  document.getElementById("relicSelect").addEventListener("change", e => withBusy(() => runCommand(`relic ${e.target.value}`)));
+  document.getElementById("seekerSelect").addEventListener("change", e => withBusy(() => runCommand(`seeker ${e.target.value}`)));
   document.getElementById("metricSelect").addEventListener("change", e => withBusy(() => runCommand(`metric ${e.target.value}`)));
 
   document.getElementById("addReadingBtn").addEventListener("click", () => withBusy(async () => {

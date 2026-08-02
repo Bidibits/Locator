@@ -15,7 +15,7 @@ namespace SpawnLocator
         static Session currentSession = null!;
         static readonly PingTimer timer = new PingTimer();
 
-        static RelicTier relic = Relics.Repaired;
+        static SeekerTier seeker = Seekers.Repaired;
         static int nextSeq = 1;
         static int nextKillId = 1;
         static bool replaying;
@@ -28,7 +28,7 @@ namespace SpawnLocator
 
         // Confirmed against real in-game data: distance behaves as straight-line (Euclidean),
         // not blocky/cube-shell (Chebyshev). Calibrated against a known origin point with the
-        // Repaired (Grade II) relic, whose bands are A 0-25, B 26-50, C 51-100, D 101-150,
+        // Repaired (Grade II) seeker, whose bands are A 0-25, B 26-50, C 51-100, D 101-150,
         // E 151-200, F silent:
         //   B readings landed at ~26-28    -> matches B (26-50)
         //   C reading landed at ~100.04    -> matches C (51-100)
@@ -43,7 +43,7 @@ namespace SpawnLocator
             try { Console.Title = "Ghost Seek Locator"; } catch { }
 
             Ui.Line("=== Ghost Seek Locator ===", ConsoleColor.Cyan);
-            Ui.Line("Triangulates a Praying Skeleton from Ghost Seek relic sound readings.");
+            Ui.Line("Triangulates a Praying Skeleton from Ghost Seek sound readings.");
             Ui.Line();
             Ui.Line("This session's activity (every command you type, and its outcome) stays in memory", ConsoleColor.DarkYellow);
             Ui.Line("for this run only. It is never written anywhere and never leaves this machine unless", ConsoleColor.DarkYellow);
@@ -53,12 +53,12 @@ namespace SpawnLocator
             currentSession = new Session { StartedAt = DateTime.Now };
             sessions.Add(currentSession);
 
-            AutoSelectRelic();
+            AutoSelectSeeker();
 
             Ui.Line("Enter readings as:  x y z letter        e.g.  120 64 -30 C");
             Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z | history");
             Ui.Line("          output | import | sessions | simulate | starttimer | ping | stoptimer");
-            Ui.Line("          relic | bands | metric | reset | web | help | exit");
+            Ui.Line("          seeker | bands | metric | reset | web | help | exit");
             Ui.Line();
 
             while (true)
@@ -148,7 +148,7 @@ namespace SpawnLocator
                     return (true, "help shown");
 
                 case "bands":
-                    Relics.PrintTable(relic);
+                    Seekers.PrintTable(seeker);
                     return (true, "band table shown");
 
                 case "web":
@@ -161,11 +161,13 @@ namespace SpawnLocator
                         return (true, outcome);
                     }
 
-                case "relic":
-                case "tier":
                 case "seeker":
                 case "seek":
-                    return (true, ChangeRelic(tokens.Skip(1)));
+                case "ghost":           // "ghost seeker gi" - the leftover "seeker" word is stripped by the parser below
+                case "ghostseeker":
+                case "tier":
+                case "relic":   // legacy alias, not advertised - keeps older exported session logs replayable
+                    return (true, ChangeSeeker(tokens.Skip(1)));
 
                 case "reset":
                     return (true, DoReset());
@@ -247,47 +249,47 @@ namespace SpawnLocator
             return (true, "rejected: unrecognized command");
         }
 
-        // ---------- relic selection ----------
+        // ---------- seeker selection ----------
 
         // No interactive prompt at startup - it used to block here waiting on Console.ReadLine(),
-        // which meant 'web' wasn't reachable until that was answered. Auto-picks the best relic
-        // (longest reach, finest bands) instead; 'relic <spec>' still switches it any time.
-        static void AutoSelectRelic()
+        // which meant 'web' wasn't reachable until that was answered. Auto-picks the best seeker
+        // (longest reach, finest bands) instead; 'seeker <spec>' still switches it any time.
+        static void AutoSelectSeeker()
         {
-            relic = Relics.Refined;
-            Ui.Line($"Using {relic.Label} by default - the longest-reaching, most precise relic. Type 'relic <grade>' any time to switch (e.g. 'relic gii').", ConsoleColor.Green);
-            Relics.PrintTable(relic);
+            seeker = Seekers.Refined;
+            Ui.Line($"Using {seeker.Label} by default - the longest-reaching, most precise seeker. Type 'seeker <grade>' any time to switch (e.g. 'seeker gii').", ConsoleColor.Green);
+            Seekers.PrintTable(seeker);
 
             // Not routed through Dispatch, so it logs its own entry - synthesized into
-            // Dispatch-replayable form ("relic gi") rather than skipped, so an exported log
-            // still records which relic a session started on and 'simulate' can feed it back in.
-            RecordActivity("relic gi", $"relic set to {relic.Label}");
+            // Dispatch-replayable form ("seeker gi") rather than skipped, so an exported log
+            // still records which seeker a session started on and 'simulate' can feed it back in.
+            RecordActivity("seeker gi", $"seeker set to {seeker.Label}");
         }
 
-        static string ChangeRelic(IEnumerable<string> rest)
+        static string ChangeSeeker(IEnumerable<string> rest)
         {
             string spec = string.Join(" ", rest).Trim();
             if (spec.Length == 0)
             {
-                Ui.Line($"Currently using {relic.Label}.");
-                Relics.PrintTable(relic);
-                return $"relic table shown ({relic.Label})";
+                Ui.Line($"Currently using {seeker.Label}.");
+                Seekers.PrintTable(seeker);
+                return $"seeker table shown ({seeker.Label})";
             }
 
-            var parsed = Relics.Parse(spec);
+            var parsed = Seekers.Parse(spec);
             if (parsed == null)
             {
-                Ui.Line("Didn't recognise that relic. Try: g1 / gii / tier3 / makeshift / repaired / refined.", ConsoleColor.Yellow);
-                return $"rejected: unrecognized relic '{spec}'";
+                Ui.Line("Didn't recognise that seeker. Try: g1 / gii / t3 / makeshift / repaired / refined.", ConsoleColor.Yellow);
+                return $"rejected: unrecognized seeker '{spec}'";
             }
 
-            relic = parsed;
-            Ui.Line($"Switched to {relic.Label}.", ConsoleColor.Green);
+            seeker = parsed;
+            Ui.Line($"Switched to {seeker.Label}.", ConsoleColor.Green);
             int activeCount = Active().Count;
             if (activeCount > 0)
                 Ui.Line($"  Existing {activeCount} reading(s) keep the distances they were entered with - only new entries use the table below.", ConsoleColor.DarkGray);
-            Relics.PrintTable(relic);
-            return $"relic set to {relic.Label}";
+            Seekers.PrintTable(seeker);
+            return $"seeker set to {seeker.Label}";
         }
 
         static string ChangeMetric(string[] tokens)
@@ -333,9 +335,9 @@ namespace SpawnLocator
             Band? band = ResolveBand(raw);
             if (band == null)
             {
-                string letters = string.Join(" ", relic.Bands.Select(b => b.Letter));
-                Ui.Line($"'{raw}' isn't a band on the {relic.Label}. Valid: {letters} (or 'nothing'). Type 'bands' for the table.", ConsoleColor.Yellow);
-                return $"rejected: '{raw}' is not a valid band on {relic.Label}";
+                string letters = string.Join(" ", seeker.Bands.Select(b => b.Letter));
+                Ui.Line($"'{raw}' isn't a band on the {seeker.Label}. Valid: {letters} (or 'nothing'). Type 'bands' for the table.", ConsoleColor.Yellow);
+                return $"rejected: '{raw}' is not a valid band on {seeker.Label}";
             }
 
             var reading = new Reading
@@ -345,7 +347,7 @@ namespace SpawnLocator
                 MinDist = band.Min,
                 MaxDist = band.Max,
                 Letter = band.Letter,
-                RelicName = relic.Name,
+                SeekerName = seeker.Name,
                 Timestamp = Clock.Now
             };
             readings.Add(reading);
@@ -356,14 +358,14 @@ namespace SpawnLocator
         }
 
         // Accepts the band letter, or 'nothing'/'none'/'silent'/'x'/'-' for out of range -
-        // so you never have to remember whether silence is E, F or G on this relic.
+        // so you never have to remember whether silence is E, F or G on this seeker.
         static Band? ResolveBand(string raw)
         {
             string s = raw.ToLowerInvariant();
             if (s == "nothing" || s == "none" || s == "silent" || s == "silence" || s == "x" || s == "-")
-                return relic.Silent;
+                return seeker.Silent;
 
-            if (s.Length == 1 && char.IsLetter(s[0])) return relic.Find(s[0]);
+            if (s.Length == 1 && char.IsLetter(s[0])) return seeker.Find(s[0]);
             return null;
         }
 
@@ -605,7 +607,7 @@ namespace SpawnLocator
             foreach (var t in tracks) t.Result = Solver.Solve(t.Readings, metric);
 
             Ui.Line();
-            Ui.Line($"[{active.Count} reading(s) - {relic.Label} - {metric}]", ConsoleColor.DarkGray);
+            Ui.Line($"[{active.Count} reading(s) - {seeker.Label} - {metric}]", ConsoleColor.DarkGray);
 
             if (tracks.Count > 1)
             {
@@ -662,7 +664,7 @@ namespace SpawnLocator
             if (!r.Bounded)
             {
                 Ui.Line("  Not enough info to bound a search area - silent readings only rule points OUT.", ConsoleColor.Yellow);
-                Ui.Line("  Add at least one reading where you actually heard the relic.");
+                Ui.Line("  Add at least one reading where you actually heard the seeker.");
                 return;
             }
 
@@ -877,7 +879,7 @@ namespace SpawnLocator
             soloVolumeCache.Clear();
             nextSeq = 1;
             nextKillId = 1;
-            relic = Relics.Repaired;
+            seeker = Seekers.Repaired;
             metric = DistanceMetric.Euclidean;
         }
 
@@ -900,7 +902,7 @@ namespace SpawnLocator
             timer.Start(explicitInterval);
             Ui.Line("Loop running - it shows at the right edge of the line and in the window title.", ConsoleColor.DarkCyan);
             Ui.Line("  The countdown refills the moment it empties and the loop counter ticks up.");
-            Ui.Line("  When you hear the relic, hit Enter on an empty line (or type 'ping') to re-align.");
+            Ui.Line("  When you hear the seeker, hit Enter on an empty line (or type 'ping') to re-align.");
             Ui.Line("  It learns the real interval from the gaps between your pings; you don't have to");
             Ui.Line("  catch every sound. 'timer' for the count, 'stoptimer' to end.");
             return "timer started";
@@ -934,10 +936,11 @@ namespace SpawnLocator
             Ui.Line("  simulate all         replay every imported session, reconstructing the board");
             Ui.Line("  simulate <n>         replay just one session (see 'sessions' for the number)");
             Ui.Line();
-            Ui.Line("Relic", ConsoleColor.Cyan);
-            Ui.Line("  relic g1 / gii / tier3 / refined      switch relic grade");
-            Ui.Line("  bands                                 show the current band table");
-            Ui.Line("  metric euclidean | chebyshev          round vs blocky rings");
+            Ui.Line("Ghost Seeker", ConsoleColor.Cyan);
+            Ui.Line("  seeker g1 / gii / refined     switch by grade - I is best (g1 > g2 > g3)");
+            Ui.Line("  seeker t1 / t3                switch by tier - opposite order (t3 is best, t1 weakest)");
+            Ui.Line("  bands                         show the current band table");
+            Ui.Line("  metric euclidean | chebyshev  round vs blocky rings");
             Ui.Line();
             Ui.Line("Browser UI", ConsoleColor.Cyan);
             Ui.Line("  web                  start a local web UI for this session and open it in your browser -");

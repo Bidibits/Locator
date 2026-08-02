@@ -128,13 +128,13 @@ namespace SpawnLocator
         {
             var snap = new StateSnapshot
             {
-                Relic = new RelicDto
+                Seeker = new SeekerDto
                 {
-                    Label = relic.Label,
-                    Grade = relic.Grade,
-                    Token = relic.Grade == "III" ? "giii" : relic.Grade == "II" ? "gii" : "gi",
-                    Reach = relic.Reach,
-                    Bands = relic.Bands.Select(b => new BandDto
+                    Label = seeker.Label,
+                    Grade = seeker.Grade,
+                    Token = seeker.Grade == "III" ? "giii" : seeker.Grade == "II" ? "gii" : "gi",
+                    Reach = seeker.Reach,
+                    Bands = seeker.Bands.Select(b => new BandDto
                     {
                         Letter = b.Letter, Min = b.Min, Max = b.IsSilent ? (double?)null : b.Max, RangeText = b.RangeText,
                     }).ToList(),
@@ -243,7 +243,7 @@ namespace SpawnLocator
     }
 
     class BandDto { public char Letter { get; set; } public double Min { get; set; } public double? Max { get; set; } public string RangeText { get; set; } = ""; }
-    class RelicDto { public string Label { get; set; } = ""; public string Grade { get; set; } = ""; public string Token { get; set; } = ""; public double Reach { get; set; } public List<BandDto> Bands { get; set; } = new(); }
+    class SeekerDto { public string Label { get; set; } = ""; public string Grade { get; set; } = ""; public string Token { get; set; } = ""; public double Reach { get; set; } public List<BandDto> Bands { get; set; } = new(); }
     class ReadingDto { public int Seq { get; set; } public string Time { get; set; } = ""; public double X { get; set; } public double Y { get; set; } public double Z { get; set; } public string Letter { get; set; } = ""; public string BandText { get; set; } = ""; public int Track { get; set; } public double Confidence { get; set; } }
     class BlobDto { public double Cx { get; set; } public double Cy { get; set; } public double Cz { get; set; } public double MinX { get; set; } public double MaxX { get; set; } public double MinY { get; set; } public double MaxY { get; set; } public double MinZ { get; set; } public double MaxZ { get; set; } public long Count { get; set; } public double SharePct { get; set; } }
     class TrackDto
@@ -267,7 +267,7 @@ namespace SpawnLocator
 
     class StateSnapshot
     {
-        public RelicDto Relic { get; set; } = new();
+        public SeekerDto Seeker { get; set; } = new();
         public string Metric { get; set; } = "";
         public List<ReadingDto> Active { get; set; } = new();
         public List<TrackDto> Tracks { get; set; } = new();

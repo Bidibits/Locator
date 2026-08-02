@@ -6,7 +6,7 @@ using System.Threading;
 
 namespace SpawnLocator
 {
-    // The relic re-announces itself on a fixed cadence (roughly 15-20s). This runs that
+    // The seeker re-announces itself on a fixed cadence (roughly 15-20s). This runs that
     // cadence as a loop: the countdown refills the moment it empties and the loop counter
     // ticks up, so you can see both how long until the next sound and how many have gone by.
     //
@@ -71,7 +71,7 @@ namespace SpawnLocator
             EnsureThread();
         }
 
-        // Called the moment you actually hear the relic. Re-aligns the loop to the real sound
+        // Called the moment you actually hear the seeker. Re-aligns the loop to the real sound
         // and uses the observed gap to learn the true interval instead of trusting the default.
         public string Ping()
         {

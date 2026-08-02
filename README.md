@@ -1,8 +1,9 @@
 # Locator
 
-Triangulates a **Praying Skeleton** from Ghost Seek relic readings.
+Triangulates a **Praying Skeleton** from Ghost Seek readings, using whichever Ghost Seeker
+you're holding.
 
-The relic only tells you roughly how far away something is — a different sound per
+The seeker only tells you roughly how far away something is — a different sound per
 distance ring. Stand somewhere, note your coordinates and which ring you heard, and
 this narrows down where the skeleton actually is.
 
@@ -13,7 +14,7 @@ dotnet run --project Locator
 ```
 
 It starts straight at the `>` prompt on Grade I (Refined) by default — the longest-reaching,
-most precise relic. Switch with `relic <spec>` if you're actually holding something else. Then
+most precise seeker. Switch with `seeker <spec>` if you're actually holding something else. Then
 enter readings as `x y z letter`:
 
 ```
@@ -21,7 +22,7 @@ enter readings as `x y z letter`:
 > -63 -1319 -285 C
 ```
 
-## Relics and bands
+## Ghost Seekers and bands
 
 **A is always the closest ring.** Letters step outward from there, and the letter right
 after the last audible ring means silence — though you can always just type `nothing`
@@ -33,11 +34,20 @@ after the last audible ring means silence — though you can always just type `n
 | **Grade II** — Repaired Ghost Seek | A | B | C | D | E | — | **F** (201+) |
 | **Grade I** — Refined Ghost Seek | A | B | C | D | E | F | **G** (251+) |
 
-Switch with `relic` — it accepts `g1`, `gii`, `giii`, `grade 2`, `t3`, `tier1`, a bare `2`,
-or a name like `refined`. The number is always the grade number, so `t1` and `g1` both
-mean Grade I.
+Switch with `seeker` — and it matters *which* number scheme you use, because Grade and
+Tier count in opposite directions:
 
-Switching relics mid-hunt is safe: existing readings keep the distances they were
+| | Grade | Tier |
+|---|---|---|
+| Makeshift (weakest) | III (`g3`) | 1 (`t1`) |
+| Repaired | II (`g2`) | 2 (`t2`) |
+| Refined (best) | I (`g1`) | 3 (`t3`) |
+
+So `seeker g1` and `seeker t3` do the same thing; `seeker g1` and `seeker t1` do the
+*opposite*. Full names work too — `makeshift`, `repaired`, `refined` — as does `grade 2`,
+`tier3`, `ghostseeker gii`, or a bare number if you already know which scheme you mean.
+
+Switching seekers mid-hunt is safe: existing readings keep the distances they were
 entered with, so an old `D` never silently changes meaning.
 
 ## Commands
@@ -56,7 +66,7 @@ entered with, so an old `D` never silently changes meaning.
 | `import <file>` | Load a previously saved session log |
 | `sessions` | List every session currently held (this run + anything imported) |
 | `simulate all` / `simulate <n>` | Replay imported sessions, reconstructing the board |
-| `relic <spec>` / `bands` | Change relic / show the band table |
+| `seeker <spec>` / `bands` | Change Ghost Seeker / show the band table |
 | `metric euclidean｜chebyshev` | Round vs blocky rings |
 | `starttimer [secs]` / `ping` / `timer` / `stoptimer` | Looping sound countdown + cycle count |
 | `web` | Start a local browser UI for this session (see below) |
@@ -154,7 +164,7 @@ Commands        3
 Started   2026-08-01 20:15:03.112
 Duration  00:42:17
 Commands  3
-2026-08-01 20:15:03.112	relic gii	relic set to Grade II - Repaired Ghost Seek
+2026-08-01 20:15:03.112	seeker gii	seeker set to Grade II - Repaired Ghost Seek
 2026-08-01 20:15:41.900	120 64 -30 C	reading #1 added
 2026-08-01 20:57:20.331	found 0 -1319 -300	kill #1 confirmed at (0,-1319,-300), retired #1
 --- end session 1 ---
@@ -194,7 +204,7 @@ came from.
 
 ### Sound loop
 
-The relic re-announces on a fixed cadence. `starttimer` runs that cadence as a loop —
+The seeker re-announces on a fixed cadence. `starttimer` runs that cadence as a loop —
 the countdown refills the instant it empties and the loop counter ticks up, so you can
 see both how long until the next sound and how many have gone by:
 
@@ -223,7 +233,7 @@ counter turns amber — the phase may have drifted, or you may have walked out o
    boxes in a track are intersected to bound the search area.
 2. That box is sampled on a grid sized to land near ~2M sample points.
 3. A point survives only if its rounded distance to *every* reading in the track falls
-   inside that reading's band. Rounding matters — the relic reports a rounded distance,
+   inside that reading's band. Rounding matters — the seeker reports a rounded distance,
    so a true 100.04 still counts as 100.
 4. Survivors are accumulated into coarse cells (bounded memory, no million-point lists),
    then flood-filled to find disconnected pockets.
@@ -236,5 +246,5 @@ band edges (a `B` landing at ~26–28, a `C` at ~100.04, a `D` at ~101–105).
 
 ## Note
 
-`Locator/Data.txt` is a captured console session from before the relic/letter rework —
+`Locator/Data.txt` is a captured console session from before the seeker/letter rework —
 it uses the old `near`/`far` keywords. Kept as a log; nothing reads it.
