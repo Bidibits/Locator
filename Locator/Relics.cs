@@ -133,11 +133,5 @@ namespace SpawnLocator
             }
             Ui.Line();
         }
-
-        public static void PrintChoices()
-        {
-            foreach (var t in All.OrderByDescending(t => t.GradeNumber))
-                Ui.Line($"    Grade {t.Grade,-4} {t.Name,-24} reaches {t.Reach:0} blocks, {t.Thresholds.Length} sounds");
-        }
     }
 }

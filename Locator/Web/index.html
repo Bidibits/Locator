@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ghost Seek Locator</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #ffffff; --border: #dde1e6; --text: #1b1f24; --muted: #6b7280;
+    --accent: #2f6fed; --accent-ink: #ffffff; --good: #1f9d55; --warn: #b98900; --bad: #d1453b;
+    --track-bg: #eef0f3; --mono: "Consolas","SFMono-Regular",Menlo,Monaco,monospace;
+    --sans: system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1c1f24; --border: #30343b; --text: #e8eaed; --muted: #9aa1ab;
+      --accent: #5b8dfb; --accent-ink: #0b0d10; --good: #3ec97a; --warn: #e0ac3b; --bad: #f16a60;
+      --track-bg: #23262c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+         line-height: 1.45; padding: 20px; }
+  .wrap { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+  h1 { font-size: 22px; margin: 0 0 2px; }
+  .tagline { color: var(--muted); margin: 0; font-size: 14px; }
+  .notice { background: var(--track-bg); border: 1px solid var(--border); border-radius: 10px;
+            padding: 10px 14px; font-size: 13px; color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .panel h2 { font-size: 15px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+  .panel h2 .hint { font-weight: normal; color: var(--muted); font-size: 12px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; min-width: 90px; }
+  .field.grow { flex: 1; min-width: 160px; }
+  label { font-size: 12px; color: var(--muted); }
+  input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text);
+                  border-radius: 8px; padding: 8px 10px; font-size: 14px; font-family: var(--sans); }
+  input[type=number] { width: 100%; font-family: var(--mono); }
+  a.button, button { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 8px;
+           padding: 9px 16px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
+           text-decoration: none; display: inline-block; }
+  button:hover, a.button:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.secondary, a.button.secondary { background: var(--track-bg); color: var(--text); border: 1px solid var(--border); }
+  button.danger { background: var(--bad); color: #fff; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  td.mono, .mono { font-family: var(--mono); }
+  .bar { display: inline-block; width: 90px; height: 8px; border-radius: 4px; background: var(--track-bg);
+         overflow: hidden; vertical-align: middle; margin-right: 6px; }
+  .bar > i { display: block; height: 100%; }
+  .pct { font-size: 12px; font-family: var(--mono); }
+  .band-table { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .band-chip { border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: 12px; font-family: var(--mono); background: var(--track-bg); }
+  .track-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 10px; }
+  .track-card.warn { border-color: var(--warn); }
+  .track-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 10px; font-size: 13px; }
+  .kv .k { color: var(--muted); }
+  .msg { font-size: 13px; padding: 8px 10px; border-radius: 8px; margin-top: 6px; }
+  .msg.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+  .msg.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+  .msg.good { background: color-mix(in srgb, var(--good) 15%, transparent); color: var(--good); }
+  .empty { color: var(--muted); font-size: 13px; font-style: italic; }
+  .pocket { font-size: 12px; color: var(--muted); margin: 2px 0 2px 8px; }
+  .kill { border-top: 1px dashed var(--border); padding: 8px 0; font-size: 13px; }
+  .kill:first-child { border-top: none; }
+  .timer-bar { width: 100%; height: 14px; border-radius: 7px; background: var(--track-bg); overflow: hidden; margin: 8px 0; }
+  .timer-status { font-family: var(--mono); font-size: 13px; }
+  .sessions-list { max-height: 160px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .session-row { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 13px; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .session-row:last-child { border-bottom: none; }
+  .session-row.selected { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+  .session-row .tag { color: var(--muted); font-size: 11px; }
+  .footer { text-align: center; color: var(--muted); font-size: 12px; padding: 8px 0 20px; }
+  .log-out { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; background: var(--track-bg);
+             border-radius: 8px; padding: 8px 10px; margin-top: 8px; max-height: 140px; overflow-y: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <h1>Ghost Seek Locator</h1>
+    <p class="tagline">Triangulates a Praying Skeleton from Ghost Seek relic sound readings.</p>
+  </header>
+
+  <div class="notice">
+    This page is a view onto the terminal session that opened it - every action here runs through
+    the exact same engine the console uses, on this computer. Nothing is sent anywhere else, and
+    closing this tab doesn't close the terminal (or vice versa) - they share one live board.
+  </div>
+
+  <div class="panel">
+    <h2>Relic <span class="hint">choose what you're holding</span></h2>
+    <div class="row">
+      <div class="field grow">
+        <label for="relicSelect">Grade</label>
+        <select id="relicSelect">
+          <option value="giii">Grade III - Makeshift Ghost Seek</option>
+          <option value="gii">Grade II - Repaired Ghost Seek</option>
+          <option value="gi">Grade I - Refined Ghost Seek</option>
+        </select>
+      </div>
+      <div class="field grow">
+        <label for="metricSelect">Distance metric</label>
+        <select id="metricSelect">
+          <option value="euclidean">Euclidean (round rings)</option>
+          <option value="chebyshev">Chebyshev (blocky rings)</option>
+        </select>
+      </div>
+    </div>
+    <div class="band-table" id="bandTable"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Add a reading</h2>
+    <div class="row" id="addReadingRow">
+      <div class="field"><label for="rx">X</label><input id="rx" type="number" step="any"></div>
+      <div class="field"><label for="ry">Y</label><input id="ry" type="number" step="any"></div>
+      <div class="field"><label for="rz">Z</label><input id="rz" type="number" step="any"></div>
+      <div class="field">
+        <label for="rband">Band</label>
+        <select id="rband"></select>
+      </div>
+      <button id="addReadingBtn">Add reading</button>
+    </div>
+    <div id="addReadingMsg"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Estimate <span class="hint" id="resultsHint"></span></h2>
+    <div id="resultsBody"><p class="empty">No active readings yet.</p></div>
+  </div>
+
+  <div class="grid2">
+    <div class="panel">
+      <h2>Active readings</h2>
+      <div id="activeTableWrap"><p class="empty">Nothing yet.</p></div>
+    </div>
+    <div class="panel">
+      <h2>Conflicts</h2>
+      <div id="conflictsBody"><p class="empty">No active readings yet.</p></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Found it</h2>
+    <div class="row">
+      <div class="field"><label for="fx">X</label><input id="fx" type="number" step="any"></div>
+      <div class="field"><label for="fy">Y</label><input id="fy" type="number" step="any"></div>
+      <div class="field"><label for="fz">Z</label><input id="fz" type="number" step="any"></div>
+      <button id="confirmFoundBtn">Confirm found</button>
+      <button id="bareFoundBtn" class="secondary">Mark found (unspecified spot)</button>
+    </div>
+    <div id="foundMsg"></div>
+    <p class="hint" style="margin-top:6px;">Retires the readings that pointed here — never deletes. A
+      near-miss coordinate that matches nothing retires nothing.</p>
+  </div>
+
+  <div class="panel">
+    <h2>History <span class="hint">every kill, and every reading it retired</span></h2>
+    <div id="historyBody"><p class="empty">No kills yet.</p></div>
+  </div>
+
+  <div class="panel">
+    <h2>Session log</h2>
+    <div class="row">
+      <a id="saveLogBtn" class="button" href="/api/export">Save session log</a>
+      <div class="field grow">
+        <label for="loadLogFile">Load a session log</label>
+        <input id="loadLogFile" type="file" accept=".txt,text/plain">
+      </div>
+    </div>
+    <div id="sessionsWrap" style="margin-top:10px;">
+      <label>Sessions held right now</label>
+      <div class="sessions-list" id="sessionsList"></div>
+      <div class="row" style="margin-top:8px;">
+        <button id="simulateSelectedBtn" class="secondary">Simulate selected</button>
+        <button id="simulateAllBtn" class="secondary">Simulate all imported</button>
+      </div>
+    </div>
+    <div id="logOut" class="log-out" style="display:none;"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Sound timer</h2>
+    <div class="row">
+      <div class="field"><label for="timerSecs">Interval (s)</label><input id="timerSecs" type="number" min="1" max="120" value="20"></div>
+      <button id="startTimerBtn">Start</button>
+      <button id="pingBtn" class="secondary">Ping (heard it)</button>
+      <button id="stopTimerBtn" class="secondary">Stop</button>
+    </div>
+    <div class="timer-status" id="timerStatus">Not running.</div>
+  </div>
+
+  <div class="panel">
+    <h2>Advanced <span class="hint">type any console command directly — same parser, same vocabulary</span></h2>
+    <div class="row">
+      <div class="field grow">
+        <label for="cmdInput">Command</label>
+        <input id="cmdInput" type="text" placeholder="e.g. 120 64 -30 C, found 0 -1319 -300, delete 3">
+      </div>
+      <button id="cmdRunBtn" class="secondary">Run</button>
+    </div>
+    <div id="cmdOut" class="log-out" style="display:none;"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Reset</h2>
+    <div class="row">
+      <button id="resetBtn" class="danger">Wipe everything (readings and history)</button>
+    </div>
+  </div>
+
+  <div class="footer">Browser view of the Locator console app, running on this computer — same engine, same session log.</div>
+</div>
+
+<script>
+"use strict";
+
+/* ---------------------------------------------------------------------- */
+/* Every action is a command string POSTed to /api/command. The server    */
+/* runs it through the exact same dispatcher the terminal uses and sends  */
+/* back the outcome plus a full snapshot of current state - nothing is    */
+/* computed here, this page only renders what the server already solved. */
+/* ---------------------------------------------------------------------- */
+
+let lastState = null;
+let selectedSessionIdx = null;
+
+async function runCommand(line) {
+  const res = await fetch("/api/command", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ line }),
+  });
+  const data = await res.json();
+  lastState = data.state;
+  render(lastState);
+  return data.outcome;
+}
+
+async function refresh() {
+  const res = await fetch("/api/state");
+  lastState = await res.json();
+  render(lastState);
+}
+
+function fmt(n, dp) { return Number(n).toFixed(dp); }
+function fmtInt(n) { return Math.round(n).toLocaleString("en-US"); }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function confidenceColorVar(c) { return c >= 0.85 ? "var(--good)" : c >= 0.5 ? "var(--warn)" : "var(--bad)"; }
+function barHtml(frac, colorVar) {
+  const pct = Math.max(0, Math.min(1, frac)) * 100;
+  return `<span class="bar"><i style="width:${pct}%;background:${colorVar || "var(--accent)"}"></i></span>`;
+}
+function flashMsg(elId, text, kind) {
+  document.getElementById(elId).innerHTML = `<div class="msg ${kind}">${escapeHtml(text)}</div>`;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Rendering - purely a function of the last snapshot from the server      */
+/* ---------------------------------------------------------------------- */
+
+function render(s) {
+  renderRelic(s); renderResults(s); renderActiveTable(s); renderConflicts(s);
+  renderHistory(s); renderSessions(s); renderTimer(s);
+}
+
+function renderRelic(s) {
+  document.getElementById("relicSelect").value = s.relic.token;
+  document.getElementById("metricSelect").value = s.metric === "Chebyshev" ? "chebyshev" : "euclidean";
+  document.getElementById("bandTable").innerHTML = s.relic.bands.map(b =>
+    `<span class="band-chip"><strong>${b.letter}</strong> &nbsp;${escapeHtml(b.rangeText)}</span>`).join("");
+  document.getElementById("rband").innerHTML = s.relic.bands.map(b =>
+    `<option value="${b.letter}">${b.letter} - ${escapeHtml(b.rangeText)}</option>`).join("");
+}
+
+function renderResults(s) {
+  const hint = document.getElementById("resultsHint");
+  const body = document.getElementById("resultsBody");
+  if (s.active.length === 0) {
+    hint.textContent = "";
+    body.innerHTML = `<p class="empty">No active readings yet. Add one above.</p>`;
+    return;
+  }
+  hint.textContent = `${s.active.length} reading(s) - ${s.relic.label} - ${s.metric}`;
+  let html = "";
+  if (s.tracks.length > 1) {
+    html += `<div class="msg warn">Your readings split into ${s.tracks.length} groups that can't all describe one skeleton.
+      Most likely you've picked up two separate spawns - each group is solved on its own below.</div>`;
+  }
+  for (const t of s.tracks) html += renderTrackCard(t, s.tracks.length);
+  body.innerHTML = html;
+}
+
+function renderTrackCard(t, trackCount) {
+  const title = trackCount > 1 ? `Track ${t.index}` : "Solution";
+  let html = `<div class="track-card${trackCount > 1 ? " warn" : ""}">`;
+  html += `<div class="track-title">${title} - ${t.ids.length} reading(s): ${t.ids.map(i=>"#"+i).join(" ")}</div>`;
+  html += `<div class="kv"><div class="k">Confidence</div><div>${barHtml(t.confidence, confidenceColorVar(t.confidence))}<span class="pct">${Math.round(t.confidence*100)}%</span></div></div>`;
+
+  if (t.status === "boxEmpty") {
+    html += `<div class="msg bad">These readings are contradictory - no location satisfies all of them. Use Delete to drop whichever one was wrong.</div>`;
+  } else if (t.status === "unbounded") {
+    html += `<div class="msg warn">Not enough info to bound a search area - silent readings only rule points out.</div>`;
+  } else if (t.status === "noCandidates") {
+    html += `<div class="msg warn">No sampled point satisfied every reading at this resolution. Add another reading to shrink the box.</div>`;
+  } else {
+    html += `<div class="kv" style="margin-top:8px;">
+      <div class="k">Estimate</div><div class="mono">(${fmt(t.cx,1)}, ${fmt(t.cy,1)}, ${fmt(t.cz,1)})</div>
+      <div class="k">Region</div><div class="mono">X[${fmt(t.minX,1)}, ${fmt(t.maxX,1)}] Y[${fmt(t.minY,1)}, ${fmt(t.maxY,1)}] Z[${fmt(t.minZ,1)}, ${fmt(t.maxZ,1)}]</div>`;
+    if (t.baselinePct != null)
+      html += `<div class="k">Search space</div><div>${barHtml(t.baselinePct/100)}<span class="pct">${fmt(t.baselinePct,2)}% of reading #${t.ids[0]} alone</span></div>`;
+    html += `<div class="k">Volume</div><div class="mono">~${fmtInt(t.volume)} blocks&sup3; (${fmtInt(t.count)} candidates @ step ${fmt(t.step,2)})</div></div>`;
+
+    if (t.blobs.length > 1) {
+      html += `<div class="msg warn">Valid area splits into ${t.blobs.length} separated pockets, ${fmt(t.pocketGapBlocks,0)} blocks apart at the widest. Could be two skeletons, or just not enough readings yet.</div>`;
+      t.blobs.forEach((b, i) => {
+        html += `<div class="pocket">pocket ${i+1}: (${fmt(b.cx,1)}, ${fmt(b.cy,1)}, ${fmt(b.cz,1)}) - ${fmt(b.sharePct,1)}% of candidates</div>`;
+      });
+    }
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderActiveTable(s) {
+  const wrap = document.getElementById("activeTableWrap");
+  if (s.active.length === 0) { wrap.innerHTML = `<p class="empty">Nothing yet.</p>`; return; }
+  let html = `<table><thead><tr><th>#</th><th>Time</th><th>Position</th><th>Band</th><th>Range</th><th>Track</th><th>Confidence</th><th></th></tr></thead><tbody>`;
+  for (const r of s.active) {
+    html += `<tr>
+      <td class="mono">#${r.seq}</td>
+      <td class="mono">${r.time}</td>
+      <td class="mono">(${fmt(r.x,1)}, ${fmt(r.y,1)}, ${fmt(r.z,1)})</td>
+      <td class="mono">${r.letter}</td>
+      <td class="mono">${escapeHtml(r.bandText)}</td>
+      <td class="mono">${r.track}</td>
+      <td>${barHtml(r.confidence, confidenceColorVar(r.confidence))}<span class="pct">${Math.round(r.confidence*100)}%</span></td>
+      <td><button class="secondary" data-del="${r.seq}" style="padding:4px 8px;font-size:12px;">Delete</button></td>
+    </tr>`;
+  }
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+  wrap.querySelectorAll("[data-del]").forEach(btn => btn.addEventListener("click", () => runCommand(`delete ${btn.getAttribute("data-del")}`)));
+}
+
+function renderConflicts(s) {
+  const body = document.getElementById("conflictsBody");
+  if (s.active.length < 2) { body.innerHTML = `<p class="empty">Need at least two active readings.</p>`; return; }
+  if (s.conflicts.length === 0) { body.innerHTML = `<div class="msg good">No conflicts - every active reading agrees with every other.</div>`; return; }
+  let html = `<div class="msg warn">${s.conflicts.length} conflicting pair(s):</div>`;
+  for (const c of s.conflicts)
+    html += `<div style="font-size:13px;margin-top:4px;" class="mono">${escapeHtml(c.a)} vs ${escapeHtml(c.b)} - ${fmt(c.distance,1)} blocks apart</div>`;
+  body.innerHTML = html;
+}
+
+function renderHistory(s) {
+  const body = document.getElementById("historyBody");
+  if (s.kills.length === 0) { body.innerHTML = `<p class="empty">No kills yet.</p>`; return; }
+  let html = "";
+  for (const k of s.kills) {
+    html += `<div class="kill"><strong>Kill #${k.id}</strong> found ${escapeHtml(k.pos)} <span class="mono" style="color:var(--muted)">${k.time}</span><br>`;
+    if (k.retiredSeqs.length === 0) html += `retired: none (no reading matched)`;
+    else {
+      const errText = k.estimateError != null ? `, estimate was off by ${fmt(k.estimateError,1)} blocks` : "";
+      const trackText = k.trackIndex != null ? ` (track ${k.trackIndex})` : "";
+      html += `retired: ${k.retiredSeqs.map(x=>"#"+x).join(" ")}${trackText}${errText}`;
+    }
+    html += `</div>`;
+  }
+  html += `<p class="hint" style="margin-top:8px;">${s.retiredCount} retired reading(s) total, ${s.active.length} still active.</p>`;
+  body.innerHTML = html;
+}
+
+function renderSessions(s) {
+  const list = document.getElementById("sessionsList");
+  if (s.sessions.length === 0) { list.innerHTML = `<p class="empty" style="padding:8px;">No sessions.</p>`; return; }
+  list.innerHTML = s.sessions.map(sess => {
+    const selected = selectedSessionIdx === sess.index ? " selected" : "";
+    return `<div class="session-row${selected}" data-idx="${sess.index}">
+      <span>[${sess.index}] ${sess.startedAt} - ${sess.commands} command(s)</span>
+      <span class="tag">${sess.tag}</span></div>`;
+  }).join("");
+  list.querySelectorAll("[data-idx]").forEach(row => row.addEventListener("click", () => {
+    selectedSessionIdx = Number(row.getAttribute("data-idx"));
+    renderSessions(lastState);
+  }));
+}
+
+function renderTimer(s) {
+  document.getElementById("timerStatus").textContent = s.timerStatus;
+}
+
+/* ---------------------------------------------------------------------- */
+/* Wiring                                                                  */
+/* ---------------------------------------------------------------------- */
+
+const BUSY_BUTTON_IDS = ["addReadingBtn", "confirmFoundBtn", "bareFoundBtn", "resetBtn",
+  "simulateSelectedBtn", "simulateAllBtn", "relicSelect", "metricSelect", "cmdRunBtn"];
+async function withBusy(fn) {
+  const els = BUSY_BUTTON_IDS.map(id => document.getElementById(id));
+  els.forEach(el => el.disabled = true);
+  try { await fn(); } finally { els.forEach(el => el.disabled = false); }
+}
+
+function init() {
+  document.getElementById("relicSelect").addEventListener("change", e => withBusy(() => runCommand(`relic ${e.target.value}`)));
+  document.getElementById("metricSelect").addEventListener("change", e => withBusy(() => runCommand(`metric ${e.target.value}`)));
+
+  document.getElementById("addReadingBtn").addEventListener("click", () => withBusy(async () => {
+    const x = document.getElementById("rx").value, y = document.getElementById("ry").value,
+          z = document.getElementById("rz").value, band = document.getElementById("rband").value;
+    if (x === "" || y === "" || z === "") { flashMsg("addReadingMsg", "Enter X, Y and Z.", "warn"); return; }
+    const outcome = await runCommand(`${x} ${y} ${z} ${band}`);
+    const ok = outcome.startsWith("reading");
+    flashMsg("addReadingMsg", outcome, ok ? "good" : "warn");
+    if (ok) {
+      document.getElementById("rx").value = ""; document.getElementById("ry").value = ""; document.getElementById("rz").value = "";
+      document.getElementById("rx").focus();
+    }
+  }));
+  document.getElementById("addReadingRow").addEventListener("keydown", e => {
+    if (e.key === "Enter") document.getElementById("addReadingBtn").click();
+  });
+
+  document.getElementById("confirmFoundBtn").addEventListener("click", () => withBusy(async () => {
+    const x = document.getElementById("fx").value, y = document.getElementById("fy").value, z = document.getElementById("fz").value;
+    if (x === "" || y === "" || z === "") { flashMsg("foundMsg", "Enter X, Y and Z.", "warn"); return; }
+    const outcome = await runCommand(`found ${x} ${y} ${z}`);
+    flashMsg("foundMsg", outcome, outcome.includes("no reading matched") ? "warn" : "good");
+  }));
+  document.getElementById("bareFoundBtn").addEventListener("click", () => withBusy(async () => {
+    flashMsg("foundMsg", await runCommand("found"), "good");
+  }));
+
+  document.getElementById("resetBtn").addEventListener("click", () => withBusy(async () => {
+    if (!confirm("Wipe every reading and all kill history? This can't be undone.")) return;
+    await runCommand("reset");
+  }));
+
+  document.getElementById("loadLogFile").addEventListener("change", e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const out = document.getElementById("logOut");
+      out.style.display = "block";
+      const res = await fetch("/api/import", { method: "POST", headers: { "Content-Type": "text/plain" }, body: reader.result });
+      const data = await res.json();
+      if (!data.ok) { out.textContent = `Couldn't read that as a Locator session log: ${data.error}`; return; }
+      lastState = data.state;
+      render(lastState);
+      out.textContent = `Imported ${data.sessionCount} session(s), ${data.commandCount} command(s) total.`;
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  });
+
+  document.getElementById("simulateSelectedBtn").addEventListener("click", () => withBusy(async () => {
+    const out = document.getElementById("logOut");
+    out.style.display = "block";
+    if (selectedSessionIdx == null) { out.textContent = "Pick a session from the list first."; return; }
+    out.textContent = await runCommand(`simulate ${selectedSessionIdx}`);
+    selectedSessionIdx = null;
+  }));
+  document.getElementById("simulateAllBtn").addEventListener("click", () => withBusy(async () => {
+    const out = document.getElementById("logOut");
+    out.style.display = "block";
+    out.textContent = await runCommand("simulate all");
+    selectedSessionIdx = null;
+  }));
+
+  document.getElementById("startTimerBtn").addEventListener("click", () => {
+    const secs = Number(document.getElementById("timerSecs").value) || 20;
+    runCommand(`starttimer ${secs}`);
+  });
+  document.getElementById("pingBtn").addEventListener("click", () => runCommand("ping"));
+  document.getElementById("stopTimerBtn").addEventListener("click", () => runCommand("stoptimer"));
+
+  const runCmd = () => withBusy(async () => {
+    const input = document.getElementById("cmdInput");
+    const line = input.value.trim();
+    if (!line) return;
+    const outcome = await runCommand(line);
+    const out = document.getElementById("cmdOut");
+    out.style.display = "block";
+    out.textContent = `> ${line}\n${outcome}`;
+    input.value = "";
+    input.focus();
+  });
+  document.getElementById("cmdRunBtn").addEventListener("click", runCmd);
+  document.getElementById("cmdInput").addEventListener("keydown", e => { if (e.key === "Enter") runCmd(); });
+
+  refresh();
+  // Light polling only while the sound timer is actually running, to keep its countdown live -
+  // everything else here only changes in response to an action this page itself just took.
+  setInterval(() => { if (lastState && lastState.timerRunning) refresh(); }, 500);
+}
+
+init();
+</script>
+</body>
+</html>

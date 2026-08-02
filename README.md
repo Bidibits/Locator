@@ -12,7 +12,9 @@ this narrows down where the skeleton actually is.
 dotnet run --project Locator
 ```
 
-It asks which relic you're holding first. Then enter readings as `x y z letter`:
+It starts straight at the `>` prompt on Grade I (Refined) by default — the longest-reaching,
+most precise relic. Switch with `relic <spec>` if you're actually holding something else. Then
+enter readings as `x y z letter`:
 
 ```
 > -119 -1319 -241 D
@@ -31,9 +33,9 @@ after the last audible ring means silence — though you can always just type `n
 | **Grade II** — Repaired Ghost Seek | A | B | C | D | E | — | **F** (201+) |
 | **Grade I** — Refined Ghost Seek | A | B | C | D | E | F | **G** (251+) |
 
-Pick a relic at startup or with `relic` — it accepts `g1`, `gii`, `giii`, `grade 2`,
-`t3`, `tier1`, a bare `2`, or a name like `refined`. The number is always the grade
-number, so `t1` and `g1` both mean Grade I.
+Switch with `relic` — it accepts `g1`, `gii`, `giii`, `grade 2`, `t3`, `tier1`, a bare `2`,
+or a name like `refined`. The number is always the grade number, so `t1` and `g1` both
+mean Grade I.
 
 Switching relics mid-hunt is safe: existing readings keep the distances they were
 entered with, so an old `D` never silently changes meaning.
@@ -57,6 +59,22 @@ entered with, so an old `D` never silently changes meaning.
 | `relic <spec>` / `bands` | Change relic / show the band table |
 | `metric euclidean｜chebyshev` | Round vs blocky rings |
 | `starttimer [secs]` / `ping` / `timer` / `stoptimer` | Looping sound countdown + cycle count |
+| `web` | Start a local browser UI for this session (see below) |
+
+## Browser UI
+
+Type `web` at any time and the app starts a small local web server and opens your default
+browser to it. This isn't a second implementation — every click in the browser runs through
+the exact same command dispatcher the terminal uses, on the same running process, so there's
+one engine and one set of state. The terminal keeps working the whole time; add a reading in
+one, refresh the other, they're both looking at the same board.
+
+Nothing is exposed outside this machine — the server only listens on `127.0.0.1`, on a random
+free port chosen each time. Closing the browser tab doesn't stop the terminal, and vice versa;
+the process keeps running (and the server with it) until you `exit` the terminal.
+
+The browser page also has an always-available command box wired to the same dispatcher, so
+anything the terminal understands is reachable there too, not just what has a dedicated button.
 
 ## What it does beyond averaging
 
