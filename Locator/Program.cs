@@ -53,7 +53,7 @@ namespace SpawnLocator
             currentSession = new Session { StartedAt = DateTime.Now };
             sessions.Add(currentSession);
 
-            AskForRelic();
+            AutoSelectRelic();
 
             Ui.Line("Enter readings as:  x y z letter        e.g.  120 64 -30 C");
             Ui.Line("Commands: list | estimate | tracks | conflicts | delete N | found x y z | history");
@@ -249,47 +249,19 @@ namespace SpawnLocator
 
         // ---------- relic selection ----------
 
-        static void AskForRelic()
+        // No interactive prompt at startup - it used to block here waiting on Console.ReadLine(),
+        // which meant 'web' wasn't reachable until that was answered. Auto-picks the best relic
+        // (longest reach, finest bands) instead; 'relic <spec>' still switches it any time.
+        static void AutoSelectRelic()
         {
-            Ui.Line("Which Ghost Seek are you using?");
-            Relics.PrintChoices();
-            Ui.Line("Type a grade (g1 / gii / tier3 / 2) or a name (refined).");
-
-            string chosenInput = "2";   // canonical default token - replayable via 'relic 2'
-
-            while (true)
-            {
-                Ui.Raw("relic> ");
-                string? input = Console.ReadLine();
-                if (input == null) { relic = Relics.Repaired; break; }
-
-                input = input.Trim();
-                if (input.Length == 0)
-                {
-                    Ui.Line($"  Defaulting to {Relics.Repaired.Label}.", ConsoleColor.DarkGray);
-                    relic = Relics.Repaired;
-                    break;
-                }
-
-                var parsed = Relics.Parse(input);
-                if (parsed == null)
-                {
-                    Ui.Line("  Didn't recognise that. Try: g1, g2, g3, gi, gii, giii, tier1, 2, makeshift, repaired, refined.", ConsoleColor.Yellow);
-                    continue;
-                }
-
-                relic = parsed;
-                chosenInput = input;
-                break;
-            }
-
-            Ui.Line($"Using {relic.Label}.", ConsoleColor.Green);
+            relic = Relics.Refined;
+            Ui.Line($"Using {relic.Label} by default - the longest-reaching, most precise relic. Type 'relic <grade>' any time to switch (e.g. 'relic gii').", ConsoleColor.Green);
             Relics.PrintTable(relic);
 
-            // Not routed through Dispatch (this prompt takes bare "gii", not "relic gii"), so it
-            // logs its own entry - synthesized into Dispatch-replayable form ("relic <token>")
-            // rather than the literal sub-prompt text, so 'simulate' can feed it straight back in.
-            RecordActivity($"relic {chosenInput}", $"relic set to {relic.Label}");
+            // Not routed through Dispatch, so it logs its own entry - synthesized into
+            // Dispatch-replayable form ("relic gi") rather than skipped, so an exported log
+            // still records which relic a session started on and 'simulate' can feed it back in.
+            RecordActivity("relic gi", $"relic set to {relic.Label}");
         }
 
         static string ChangeRelic(IEnumerable<string> rest)

@@ -12,7 +12,9 @@ this narrows down where the skeleton actually is.
 dotnet run --project Locator
 ```
 
-It asks which relic you're holding first. Then enter readings as `x y z letter`:
+It starts straight at the `>` prompt on Grade I (Refined) by default — the longest-reaching,
+most precise relic. Switch with `relic <spec>` if you're actually holding something else. Then
+enter readings as `x y z letter`:
 
 ```
 > -119 -1319 -241 D
@@ -31,9 +33,9 @@ after the last audible ring means silence — though you can always just type `n
 | **Grade II** — Repaired Ghost Seek | A | B | C | D | E | — | **F** (201+) |
 | **Grade I** — Refined Ghost Seek | A | B | C | D | E | F | **G** (251+) |
 
-Pick a relic at startup or with `relic` — it accepts `g1`, `gii`, `giii`, `grade 2`,
-`t3`, `tier1`, a bare `2`, or a name like `refined`. The number is always the grade
-number, so `t1` and `g1` both mean Grade I.
+Switch with `relic` — it accepts `g1`, `gii`, `giii`, `grade 2`, `t3`, `tier1`, a bare `2`,
+or a name like `refined`. The number is always the grade number, so `t1` and `g1` both
+mean Grade I.
 
 Switching relics mid-hunt is safe: existing readings keep the distances they were
 entered with, so an old `D` never silently changes meaning.
