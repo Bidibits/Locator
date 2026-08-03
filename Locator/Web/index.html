@@ -261,6 +261,36 @@ function flashMsg(elId, text, kind) {
 }
 
 /* ---------------------------------------------------------------------- */
+/* Minecraft's F3+C copies a teleport command with the current position -  */
+/* e.g. "/execute in minecraft:overworld run tp @s -2.51 -60.00 4.41       */
+/* 897.60 90.00" (older versions: just "/tp @s x y z yaw pitch"). Pasting  */
+/* that whole thing into any one X/Y/Z box fills all three, so you never   */
+/* have to hand-type the number.                                           */
+/* ---------------------------------------------------------------------- */
+
+function parseF3CTeleport(text) {
+  const m = text.match(/tp\s+@[sp]\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)\s+(-?\d+\.?\d*)/i);
+  if (!m) return null;
+  return { x: parseFloat(m[1]), y: parseFloat(m[2]), z: parseFloat(m[3]) };
+}
+
+// Wires a paste handler onto each of a set of X/Y/Z inputs: if the pasted text is an
+// F3+C teleport command, all three fields fill from it and the raw paste is suppressed
+// (a number input would reject that text anyway); anything else pastes normally.
+function wireF3CAutofill(xId, yId, zId) {
+  const xEl = document.getElementById(xId), yEl = document.getElementById(yId), zEl = document.getElementById(zId);
+  for (const el of [xEl, yEl, zEl]) {
+    el.addEventListener("paste", e => {
+      const text = (e.clipboardData || window.clipboardData).getData("text");
+      const parsed = parseF3CTeleport(text);
+      if (!parsed) return; // not an F3+C string - let the normal paste happen
+      e.preventDefault();
+      xEl.value = parsed.x; yEl.value = parsed.y; zEl.value = parsed.z;
+    });
+  }
+}
+
+/* ---------------------------------------------------------------------- */
 /* Rendering - purely a function of the last snapshot from the server      */
 /* ---------------------------------------------------------------------- */
 
@@ -408,6 +438,9 @@ async function withBusy(fn) {
 }
 
 function init() {
+  wireF3CAutofill("rx", "ry", "rz");
+  wireF3CAutofill("fx", "fy", "fz");
+
   document.getElementById("seekerSelect").addEventListener("change", e => withBusy(() => runCommand(`seeker ${e.target.value}`)));
   document.getElementById("metricSelect").addEventListener("change", e => withBusy(() => runCommand(`metric ${e.target.value}`)));
 
