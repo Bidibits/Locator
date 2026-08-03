@@ -7,6 +7,24 @@ The seeker only tells you roughly how far away something is — a different soun
 distance ring. Stand somewhere, note your coordinates and which ring you heard, and
 this narrows down where the skeleton actually is.
 
+Two ways to run it:
+- **`Locator/`** — the C# console app. Terminal-based, with an optional local browser UI
+  (type `web`) that talks back to the same running process. See below.
+- **`web/index.html`** — a fully standalone, single-file browser build. No install, no
+  server, no backend of any kind — everything runs in the visitor's own tab. This is the
+  one to use if you want to embed the calculator on a website (a wiki, for instance):
+  host `web/index.html` anywhere that serves static files (GitHub Pages, the wiki's own
+  file storage, whatever) and embed it with:
+  ```html
+  <iframe src="https://your-host/index.html" width="100%" height="1400" style="border:0;"></iframe>
+  ```
+  Adjust `height` to taste — the page scrolls internally if it's too short. It's the same
+  engine, same math, same session-log format as the console app (a file saved from one
+  loads and replays in the other) — just ported to run without any backend, so it's meant
+  to be handed to other people rather than kept in sync with your own local `Locator/`
+  changes. It doesn't have the Abyss-coords calibration feature yet (that's console/local-
+  web only for now, since it's tied to this specific server's own map mechanics).
+
 ## Usage
 
 ```
