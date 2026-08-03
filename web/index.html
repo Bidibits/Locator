@@ -18,6 +18,24 @@
       --track-bg: #23262c;
     }
   }
+  /* Easter egg: type "bidibits" into any X/Y/Z box to toggle this. Deliberately eye-searing. */
+  :root.bidibits-mode {
+    --bg: #000; --panel: #1a001a; --border: #ff00ff; --text: #ff00ff; --muted: #d400d4;
+    --accent: #ff00ff; --accent-ink: #000; --good: #ff00ff; --warn: #ff00ff; --bad: #ff00ff;
+    --track-bg: #2a002a;
+  }
+  :root.bidibits-mode body {
+    background-image: repeating-conic-gradient(#000 0% 25%, #ff00ff 0% 50%);
+    background-size: 32px 32px;
+    animation: bidibits-shift 0.8s steps(2) infinite;
+  }
+  :root.bidibits-mode * {
+    text-shadow: 1px 1px 0 #000, -1px -1px 0 #ff00ff;
+  }
+  @keyframes bidibits-shift {
+    0% { background-position: 0 0; }
+    100% { background-position: 32px 32px; }
+  }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
          line-height: 1.45; padding: 20px; }
@@ -556,6 +574,83 @@ function wireF3CAutofill(xId, yId, zId) {
       xEl.value = parsed.x; yEl.value = parsed.y; zEl.value = parsed.z;
     });
   }
+}
+
+/* ---------------------------------------------------------------------- */
+/* Easter eggs. Standalone build only - not in the C#-hosted UI.           */
+/*                                                                          */
+/* Typing "bidibits" into any X/Y/Z box (number inputs reject the letters, */
+/* but the keystrokes still fire) toggles a deliberately painful purple/   */
+/* black "missing texture" theme.                                          */
+/*                                                                          */
+/* Setting X=Y=Z=67 replaces every bit of visible text on the page with    */
+/* alternating 6/7 digits, live, until the values stop being 67/67/67.     */
+/* ---------------------------------------------------------------------- */
+
+const EASTER_BUFFER_MAX = 20;
+let easterKeyBuffer = "";
+
+function wireBidibitsEgg(...ids) {
+  for (const id of ids) {
+    document.getElementById(id).addEventListener("keydown", e => {
+      if (e.key.length !== 1) return;
+      easterKeyBuffer = (easterKeyBuffer + e.key).slice(-EASTER_BUFFER_MAX);
+      if (easterKeyBuffer.toLowerCase().includes("bidibits")) {
+        document.documentElement.classList.toggle("bidibits-mode");
+        easterKeyBuffer = "";
+      }
+    });
+  }
+}
+
+let sixtySevenActive = false;
+let sixtySevenObserver = null;
+const sixtySevenOriginals = new Map();
+
+function corruptTextNode(node) {
+  if (!node.nodeValue || !node.nodeValue.trim()) return;
+  const parent = node.parentElement;
+  if (parent && parent.closest("script,style,input,select,option,textarea")) return;
+  if (!sixtySevenOriginals.has(node)) sixtySevenOriginals.set(node, node.nodeValue);
+  let out = "", flip = 0;
+  for (const ch of node.nodeValue) {
+    if (/\s/.test(ch)) { out += ch; continue; }
+    out += (flip++ % 2 === 0) ? "6" : "7";
+  }
+  node.nodeValue = out;
+}
+
+function corruptTextIn(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode())) corruptTextNode(n);
+}
+
+function setSixtySeven(active) {
+  if (active === sixtySevenActive) return;
+  sixtySevenActive = active;
+  if (active) {
+    corruptTextIn(document.body);
+    sixtySevenObserver = new MutationObserver(muts => {
+      for (const m of muts) {
+        m.addedNodes.forEach(node => {
+          if (node.nodeType === Node.TEXT_NODE) corruptTextNode(node);
+          else if (node.nodeType === Node.ELEMENT_NODE) corruptTextIn(node);
+        });
+      }
+    });
+    sixtySevenObserver.observe(document.body, { childList: true, subtree: true });
+  } else {
+    if (sixtySevenObserver) { sixtySevenObserver.disconnect(); sixtySevenObserver = null; }
+    for (const [node, original] of sixtySevenOriginals) node.nodeValue = original;
+    sixtySevenOriginals.clear();
+  }
+}
+
+function wireSixtySevenEgg(xId, yId, zId) {
+  const xEl = document.getElementById(xId), yEl = document.getElementById(yId), zEl = document.getElementById(zId);
+  const check = () => setSixtySeven(xEl.value === "67" && yEl.value === "67" && zEl.value === "67");
+  for (const el of [xEl, yEl, zEl]) el.addEventListener("input", check);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -1140,6 +1235,9 @@ function init() {
 
   wireF3CAutofill("rx", "ry", "rz");
   wireF3CAutofill("fx", "fy", "fz");
+
+  wireBidibitsEgg("rx", "ry", "rz", "fx", "fy", "fz");
+  wireSixtySevenEgg("rx", "ry", "rz");
 
   document.getElementById("seekerSelect").addEventListener("change", e => withBusy(async () => {
     await dispatch(`seeker ${e.target.value}`); await renderAll();
