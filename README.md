@@ -68,8 +68,36 @@ entered with, so an old `D` never silently changes meaning.
 | `simulate all` / `simulate <n>` | Replay imported sessions, reconstructing the board |
 | `seeker <spec>` / `bands` | Change Ghost Seeker / show the band table |
 | `metric euclidean｜chebyshev` | Round vs blocky rings |
+| `coords abyss｜minecraft` | Switch coordinate display mode (see below) |
 | `starttimer [secs]` / `ping` / `timer` / `stoptimer` | Looping sound countdown + cycle count |
 | `web` | Start a local browser UI for this session (see below) |
+
+## Abyss vs Minecraft coordinates
+
+Some servers fake a much taller world than vanilla Minecraft allows by chaining
+horizontally-offset "sections" together, teleporting you between them when you cross
+certain Y thresholds. They expose two coordinate displays: real Minecraft coordinates
+(huge X values, Y realistically bounded), and a friendlier "Abyss" display with smaller
+X/Z but a Y that can run far outside Minecraft's real range.
+
+If you're reading Abyss coordinates off your screen, `coords abyss` switches into that
+mode. On its own this changes nothing — but you can optionally attach the real Minecraft
+elevation to any reading as a 5th value:
+
+```
+> coords abyss
+> 120 -1319 -30 C 45
+Calibrated from #1: abyss Y -1319 = real Y 45 -> offset -1364.
+```
+
+From that one pairing the app learns the constant offset between Abyss-Y and real-Y for
+your current section, and applies the real, game-confirmed Praying Skeleton spawn band
+(**Y[-220, 220]**) as an extra hard constraint on every solve from then on — shrinking
+the search box before any grid sampling even starts, on top of what the readings'
+own distance bounds already provide. You can recalibrate at any time the same way (say,
+if you suspect you've crossed a section boundary); the most recent calibration wins.
+Uncalibrated Abyss mode behaves exactly like Minecraft mode — nothing changes until you
+supply that first real-Y value. `bands` shows the current calibration status.
 
 ## Browser UI
 

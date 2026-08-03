@@ -142,7 +142,11 @@ namespace SpawnLocator
                 Metric = metric.ToString(),
                 TimerStatus = timer.Status(),
                 TimerRunning = timer.Running,
+                CoordsMode = coordsMode.ToString(),
+                AbyssYOffset = abyssYOffset,
+                AbyssYOffsetFromSeq = abyssYOffsetSetBySeq,
             };
+            (snap.EffectiveYMin, snap.EffectiveYMax) = EffectiveAbyssYBand();
 
             var active = Active();
             var conf = Analysis.Confidence(active, metric);
@@ -162,7 +166,7 @@ namespace SpawnLocator
 
             foreach (var t in tracks)
             {
-                var result = Solver.Solve(t.Readings, metric);
+                var result = Solver.Solve(t.Readings, metric, snap.EffectiveYMin, snap.EffectiveYMax);
                 var avgConf = t.Readings.Average(x => conf[x.Seq]);
                 var dto = new TrackDto { Index = t.Index, Ids = t.Readings.Select(r => r.Seq).ToList(), Confidence = avgConf };
 
@@ -277,5 +281,10 @@ namespace SpawnLocator
         public List<SessionDto> Sessions { get; set; } = new();
         public string TimerStatus { get; set; } = "";
         public bool TimerRunning { get; set; }
+        public string CoordsMode { get; set; } = "";
+        public double? AbyssYOffset { get; set; }
+        public int? AbyssYOffsetFromSeq { get; set; }
+        public double? EffectiveYMin { get; set; }
+        public double? EffectiveYMax { get; set; }
     }
 }

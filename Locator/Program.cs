@@ -35,7 +35,25 @@ namespace SpawnLocator
         //   D readings landed at ~101-105  -> matches D (101-150)
         static DistanceMetric metric = DistanceMetric.Euclidean;
 
+        // Abyss-coords calibration (see 'coords' command). Default reproduces today's
+        // behavior exactly - every new code path this gates on is a no-op until a user
+        // both switches to Abyss mode AND supplies a calibration reading.
+        static CoordsMode coordsMode = CoordsMode.Minecraft;
+        static double? abyssYOffset;        // AbyssY - RealY at the calibration reading
+        static int? abyssYOffsetSetBySeq;    // which reading # last (re)calibrated it
+
         static List<Reading> Active() => readings.Where(r => !r.Retired).ToList();
+
+        // Converts the real-world spawn band into abyss-Y space (readings are stored in
+        // abyss-Y once calibrated) and folds in the slack. Null/null whenever the gate
+        // isn't met, which Solver.Solve treats as "no extra constraint".
+        static (double? min, double? max) EffectiveAbyssYBand()
+        {
+            if (coordsMode != CoordsMode.Abyss || !abyssYOffset.HasValue) return (null, null);
+            double off = abyssYOffset.Value;
+            return (Solver.PrayingSkeletonSpawnMinY - Solver.AbyssYBandSlack + off,
+                    Solver.PrayingSkeletonSpawnMaxY + Solver.AbyssYBandSlack + off);
+        }
 
         static void Main()
         {
@@ -149,6 +167,8 @@ namespace SpawnLocator
 
                 case "bands":
                     Seekers.PrintTable(seeker);
+                    if (coordsMode == CoordsMode.Abyss)
+                        Ui.Line($"Abyss coords: {CoordsStatusText()}");
                     return (true, "band table shown");
 
                 case "web":
@@ -213,6 +233,9 @@ namespace SpawnLocator
                 case "metric":
                     return (true, ChangeMetric(tokens));
 
+                case "coords":
+                    return (true, ChangeCoordsMode(tokens));
+
                 case "starttimer":
                 case "timerstart":
                     if (replaying) return (true, "starttimer (skipped during replay)");
@@ -243,6 +266,10 @@ namespace SpawnLocator
                     }
             }
 
+            // "x y z letter realY" - a 5th token calibrates Abyss coords. Never collides with
+            // a keyword case above (the first token here is always numeric), so this and the
+            // plain 4-token add below are the natural fallthrough for anything else.
+            if (tokens.Length == 5) return (true, TryAddReadingWithCalibration(tokens));
             if (tokens.Length == 4) return (true, TryAddReading(tokens));
 
             Ui.Line("Didn't understand that. Type 'help' for usage.");
@@ -321,25 +348,131 @@ namespace SpawnLocator
             return $"metric set to {metric}";
         }
 
+        static string ChangeCoordsMode(string[] tokens)
+        {
+            if (tokens.Length < 2)
+            {
+                string status = CoordsStatusText();
+                Ui.Line(status.Length > 0 ? $"Coords: {coordsMode}. {status}" : $"Coords: {coordsMode}.");
+                return $"coords status shown ({coordsMode})";
+            }
+
+            if (tokens[1].StartsWith("min", StringComparison.OrdinalIgnoreCase))
+            {
+                coordsMode = CoordsMode.Minecraft;
+                Ui.Line("Switched to Minecraft coords - readings now use raw coordinates, no Y-band constraint applied.", ConsoleColor.Green);
+            }
+            else if (tokens[1].StartsWith("aby", StringComparison.OrdinalIgnoreCase))
+            {
+                coordsMode = CoordsMode.Abyss;
+                Ui.Line(abyssYOffset.HasValue
+                    ? $"Switched to Abyss coords. Using existing calibration: offset {abyssYOffset.Value:0.#} (from reading #{abyssYOffsetSetBySeq})."
+                    : "Switched to Abyss coords. No calibration yet - readings behave exactly as before until you add a real Y on one (5th token, e.g. '120 -1319 -30 C 45').",
+                    ConsoleColor.Green);
+            }
+            else
+            {
+                Ui.Line("Unknown coords mode. Use 'coords minecraft' or 'coords abyss'.");
+                return "rejected: unknown coords mode";
+            }
+
+            soloVolumeCache.Clear();   // solo volumes depend on the effective Y-band, which just changed
+            if (Active().Count > 0) Estimate();
+            return $"coords set to {coordsMode}";
+        }
+
+        // Shared by 'bands' and the estimate header - only ever non-empty in Abyss mode.
+        static string CoordsStatusText()
+        {
+            if (coordsMode != CoordsMode.Abyss) return "";
+            if (!abyssYOffset.HasValue) return "Not yet calibrated - no extra Y constraint applied.";
+            var (min, max) = EffectiveAbyssYBand();
+            return $"Offset {abyssYOffset.Value:0.#} (from reading #{abyssYOffsetSetBySeq}). Real-world spawn band Y[{Solver.PrayingSkeletonSpawnMinY:0},{Solver.PrayingSkeletonSpawnMaxY:0}] -> effective abyss-Y constraint [{min:0.#}, {max:0.#}] (±{Solver.AbyssYBandSlack:0.#} block slack).";
+        }
+
         // ---------- readings ----------
 
         static string TryAddReading(string[] tokens)
         {
-            if (!TryCoords(tokens[0], tokens[1], tokens[2], out double x, out double y, out double z))
+            if (!TryParseCoordAndBand(tokens, out double x, out double y, out double z, out Band? band, out string? rejection))
+                return rejection!;
+
+            var reading = AddReadingCore(x, y, z, band!);
+            Estimate();
+            return $"reading #{reading.Seq} added";
+        }
+
+        // x y z letter realY - the 5th token calibrates Abyss coords: it's the real Minecraft
+        // elevation at this same spot, from which the app learns the constant Abyss-Y/real-Y
+        // offset for whatever section you're currently in. Rejects (adds nothing) rather than
+        // silently ignoring the 5th value if it wouldn't mean anything right now, so a typo
+        // can't quietly set a bogus offset.
+        static string TryAddReadingWithCalibration(string[] tokens)
+        {
+            if (!TryParseCoordAndBand(tokens, out double x, out double y, out double z, out Band? band, out string? rejection))
+                return rejection!;
+
+            if (coordsMode != CoordsMode.Abyss)
+            {
+                Ui.Line("That 5th value (real Y) only means something in Abyss coords mode. Switch first with 'coords abyss', or drop it to add a plain reading: x y z letter.", ConsoleColor.Yellow);
+                return "rejected: real-Y value given while in Minecraft coords mode";
+            }
+
+            if (!double.TryParse(tokens[4], NumberStyles.Float, CultureInfo.InvariantCulture, out double realY))
+            {
+                Ui.Line($"Couldn't parse '{tokens[4]}' as a real-Y number.", ConsoleColor.Yellow);
+                return $"rejected: couldn't parse '{tokens[4]}' as a real-Y number";
+            }
+
+            var reading = AddReadingCore(x, y, z, band!);
+
+            bool wasCalibrated = abyssYOffset.HasValue;
+            double oldOffset = abyssYOffset ?? 0;
+            double offset = y - realY;
+            abyssYOffset = offset;
+            abyssYOffsetSetBySeq = reading.Seq;
+            soloVolumeCache.Clear();   // solo volumes depend on the effective Y-band, which just changed
+
+            if (!wasCalibrated)
+            {
+                string offsetTerm = offset >= 0 ? $"- {offset:0.#}" : $"+ {-offset:0.#}";
+                Ui.Line($"Calibrated from #{reading.Seq}: abyss Y {y:0.#} = real Y {realY:0.#} -> offset {offset:0.#}. Every reading's implied real Y = abyss Y {offsetTerm}. The Y[-220,220] real spawn band is now applied as an extra constraint.", ConsoleColor.Green);
+            }
+            else
+                Ui.Line($"Recalibrated from #{reading.Seq}: offset updated {oldOffset:0.#} -> {offset:0.#} (previous calibration is discarded - most recent one wins).", ConsoleColor.Green);
+
+            Estimate();
+            return wasCalibrated
+                ? $"reading #{reading.Seq} added, calibration updated (offset {offset:0.#})"
+                : $"reading #{reading.Seq} added, calibration set (offset {offset:0.#})";
+        }
+
+        static bool TryParseCoordAndBand(string[] tokens, out double x, out double y, out double z, out Band? band, out string? rejection)
+        {
+            band = null;
+            if (!TryCoords(tokens[0], tokens[1], tokens[2], out x, out y, out z))
             {
                 Ui.Line("Couldn't parse x/y/z as numbers. Format:  x y z letter");
-                return "rejected: bad coordinates";
+                rejection = "rejected: bad coordinates";
+                return false;
             }
 
             string raw = tokens[3].Trim();
-            Band? band = ResolveBand(raw);
+            band = ResolveBand(raw);
             if (band == null)
             {
                 string letters = string.Join(" ", seeker.Bands.Select(b => b.Letter));
                 Ui.Line($"'{raw}' isn't a band on the {seeker.Label}. Valid: {letters} (or 'nothing'). Type 'bands' for the table.", ConsoleColor.Yellow);
-                return $"rejected: '{raw}' is not a valid band on {seeker.Label}";
+                rejection = $"rejected: '{raw}' is not a valid band on {seeker.Label}";
+                return false;
             }
 
+            rejection = null;
+            return true;
+        }
+
+        static Reading AddReadingCore(double x, double y, double z, Band band)
+        {
             var reading = new Reading
             {
                 Seq = nextSeq++,
@@ -353,8 +486,7 @@ namespace SpawnLocator
             readings.Add(reading);
 
             Ui.Line($"Added #{reading.Seq} @ {reading.TimeText}: {reading.PosText}  {band.Letter} -> {band.RangeText}");
-            Estimate();
-            return $"reading #{reading.Seq} added";
+            return reading;
         }
 
         // Accepts the band letter, or 'nothing'/'none'/'silent'/'x'/'-' for out of range -
@@ -496,7 +628,8 @@ namespace SpawnLocator
                 .OrderByDescending(t => t.Readings.Count(r => matched.Contains(r)))
                 .First();
 
-            owner.Result = Solver.Solve(owner.Readings, metric);
+            var (abyssMinY, abyssMaxY) = EffectiveAbyssYBand();
+            owner.Result = Solver.Solve(owner.Readings, metric, abyssMinY, abyssMaxY);
             double? err = null;
             if (owner.Result.Bounded && owner.Result.Count > 0)
             {
@@ -603,11 +736,14 @@ namespace SpawnLocator
                 return "estimate: nothing to solve";
             }
 
+            var (abyssMinY, abyssMaxY) = EffectiveAbyssYBand();
             var tracks = Analysis.BuildTracks(active, metric);
-            foreach (var t in tracks) t.Result = Solver.Solve(t.Readings, metric);
+            foreach (var t in tracks) t.Result = Solver.Solve(t.Readings, metric, abyssMinY, abyssMaxY);
 
             Ui.Line();
             Ui.Line($"[{active.Count} reading(s) - {seeker.Label} - {metric}]", ConsoleColor.DarkGray);
+            if (coordsMode == CoordsMode.Abyss)
+                Ui.Line($"Coords: Abyss - {CoordsStatusText()}", ConsoleColor.DarkGray);
 
             if (tracks.Count > 1)
             {
@@ -632,7 +768,8 @@ namespace SpawnLocator
 
                 if (!soloVolumeCache.TryGetValue(r.Seq, out double v))
                 {
-                    var solo = Solver.Solve(new[] { r }, metric);
+                    var (abyssMinY, abyssMaxY) = EffectiveAbyssYBand();
+                    var solo = Solver.Solve(new[] { r }, metric, abyssMinY, abyssMaxY);
                     v = solo.Bounded ? solo.Volume : 0;
                     soloVolumeCache[r.Seq] = v;
                 }
@@ -881,6 +1018,9 @@ namespace SpawnLocator
             nextKillId = 1;
             seeker = Seekers.Repaired;
             metric = DistanceMetric.Euclidean;
+            coordsMode = CoordsMode.Minecraft;
+            abyssYOffset = null;
+            abyssYOffsetSetBySeq = null;
         }
 
         // ---------- timer ----------
@@ -915,6 +1055,7 @@ namespace SpawnLocator
             Ui.Line();
             Ui.Line("Readings", ConsoleColor.Cyan);
             Ui.Line("  x y z letter         add a reading      e.g.  -12 70 305 C");
+            Ui.Line("  x y z letter realY   (Abyss coords only) also calibrates: abyss Y = real Y + offset");
             Ui.Line("  x y z nothing        no sound at all (also: none, silent, x, -)");
             Ui.Line("  list                 active readings with their track and confidence");
             Ui.Line("  conflicts            which active readings disagree, and by how much");
@@ -941,6 +1082,7 @@ namespace SpawnLocator
             Ui.Line("  seeker t1 / t3                switch by tier - opposite order (t3 is best, t1 weakest)");
             Ui.Line("  bands                         show the current band table");
             Ui.Line("  metric euclidean | chebyshev  round vs blocky rings");
+            Ui.Line("  coords abyss | minecraft      switch coordinate display mode (see 'Readings' above to calibrate)");
             Ui.Line();
             Ui.Line("Browser UI", ConsoleColor.Cyan);
             Ui.Line("  web                  start a local web UI for this session and open it in your browser -");

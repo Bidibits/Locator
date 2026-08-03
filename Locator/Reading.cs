@@ -8,6 +8,15 @@ namespace SpawnLocator
         Euclidean   // classic straight-line distance -> rings are sphere shells
     }
 
+    // Which coordinate display the player is reading readings off of. Minecraft = the
+    // real world coordinates. Abyss = a lore-flavored display some servers show instead,
+    // whose Y can differ from real Minecraft-Y by a large, per-section constant offset.
+    enum CoordsMode
+    {
+        Minecraft,
+        Abyss
+    }
+
     // One "I stood here and the seeker made sound X" observation.
     //
     // MinDist/MaxDist are resolved from the seeker's band table at entry time and stored

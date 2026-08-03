@@ -35,6 +35,18 @@ namespace SpawnLocator
         // Target sample count for the grid search. Bigger = more precise, slower.
         public const long TargetSamples = 2_000_000;
 
+        // Real-world (not Abyss-display) Y band a Praying Skeleton can spawn in, confirmed
+        // from the server's own spawn config - the union of every level/section's
+        // sectionMinY/sectionMaxY, several of which already span the full range on their own.
+        public const double PrayingSkeletonSpawnMinY = -220.0;
+        public const double PrayingSkeletonSpawnMaxY = 220.0;
+
+        // Slack at that boundary - there's no rounding involved here (unlike a seeker's
+        // rounded distance reports), the imprecision source is calibration itself (a
+        // fractional player Y, or reading a coordinate display slightly wrong), so a small
+        // margin rather than none. Matches Analysis.cs's existing 1-block SLACK precedent.
+        public const double AbyssYBandSlack = 1.0;
+
         sealed class Cell
         {
             public long Count;
@@ -44,7 +56,12 @@ namespace SpawnLocator
             public double MinZ = double.PositiveInfinity, MaxZ = double.NegativeInfinity;
         }
 
-        public static SolveResult Solve(IReadOnlyList<Reading> group, DistanceMetric metric)
+        // extraMinY/extraMaxY optionally fold in an additional Y constraint beyond what the
+        // readings themselves imply - used for the Abyss-coords real-Y spawn-band calibration
+        // (see Program.cs's EffectiveAbyssYBand). Null by default, so every existing caller
+        // that doesn't pass them behaves exactly as before.
+        public static SolveResult Solve(IReadOnlyList<Reading> group, DistanceMetric metric,
+                                         double? extraMinY = null, double? extraMaxY = null)
         {
             var result = new SolveResult();
             if (group.Count == 0) return result;
@@ -65,6 +82,9 @@ namespace SpawnLocator
                 minZ = Math.Max(minZ, r.Z - r.MaxDist);
                 maxZ = Math.Min(maxZ, r.Z + r.MaxDist);
             }
+
+            if (extraMinY.HasValue) minY = Math.Max(minY, extraMinY.Value);
+            if (extraMaxY.HasValue) maxY = Math.Min(maxY, extraMaxY.Value);
 
             if (minX > maxX || minY > maxY || minZ > maxZ)
             {

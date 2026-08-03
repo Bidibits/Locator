@@ -112,8 +112,16 @@
           <option value="chebyshev">Chebyshev (blocky rings)</option>
         </select>
       </div>
+      <div class="field grow">
+        <label for="coordsSelect">Coords</label>
+        <select id="coordsSelect">
+          <option value="minecraft">Minecraft coords</option>
+          <option value="abyss">Abyss coords</option>
+        </select>
+      </div>
     </div>
     <div class="band-table" id="bandTable"></div>
+    <p class="hint" id="coordsCalStatus" style="display:none; margin-top:8px;"></p>
   </div>
 
   <div class="panel">
@@ -126,6 +134,8 @@
         <label for="rband">Band</label>
         <select id="rband"></select>
       </div>
+      <div class="field"><label for="rRealY">Real Y <span class="hint">(Abyss calib., optional)</span></label>
+        <input id="rRealY" type="number" step="any"></div>
       <button id="addReadingBtn">Add reading</button>
     </div>
     <div id="addReadingMsg"></div>
@@ -272,10 +282,21 @@ function render(s) {
 function renderSeeker(s) {
   document.getElementById("seekerSelect").value = s.seeker.token;
   document.getElementById("metricSelect").value = s.metric === "Chebyshev" ? "chebyshev" : "euclidean";
+  document.getElementById("coordsSelect").value = s.coordsMode === "Abyss" ? "abyss" : "minecraft";
   document.getElementById("bandTable").innerHTML = s.seeker.bands.map(b =>
     `<span class="band-chip"><strong>${b.letter}</strong> &nbsp;${escapeHtml(b.rangeText)}</span>`).join("");
   document.getElementById("rband").innerHTML = s.seeker.bands.map(b =>
     `<option value="${b.letter}">${b.letter} - ${escapeHtml(b.rangeText)}</option>`).join("");
+
+  const calEl = document.getElementById("coordsCalStatus");
+  if (s.coordsMode === "Abyss") {
+    calEl.style.display = "";
+    calEl.textContent = s.abyssYOffset != null
+      ? `Calibrated: offset ${fmt(s.abyssYOffset,1)} (from #${s.abyssYOffsetFromSeq}) - effective abyss-Y band [${fmt(s.effectiveYMin,1)}, ${fmt(s.effectiveYMax,1)}]`
+      : `Abyss mode, not calibrated yet - add a real-Y value on a reading below to calibrate.`;
+  } else {
+    calEl.style.display = "none";
+  }
 }
 
 function renderResults(s) {
@@ -400,7 +421,7 @@ function renderTimer(s) {
 /* ---------------------------------------------------------------------- */
 
 const BUSY_BUTTON_IDS = ["addReadingBtn", "confirmFoundBtn", "bareFoundBtn", "resetBtn",
-  "simulateSelectedBtn", "simulateAllBtn", "seekerSelect", "metricSelect", "cmdRunBtn"];
+  "simulateSelectedBtn", "simulateAllBtn", "seekerSelect", "metricSelect", "coordsSelect", "cmdRunBtn"];
 async function withBusy(fn) {
   const els = BUSY_BUTTON_IDS.map(id => document.getElementById(id));
   els.forEach(el => el.disabled = true);
@@ -410,16 +431,20 @@ async function withBusy(fn) {
 function init() {
   document.getElementById("seekerSelect").addEventListener("change", e => withBusy(() => runCommand(`seeker ${e.target.value}`)));
   document.getElementById("metricSelect").addEventListener("change", e => withBusy(() => runCommand(`metric ${e.target.value}`)));
+  document.getElementById("coordsSelect").addEventListener("change", e => withBusy(() => runCommand(`coords ${e.target.value}`)));
 
   document.getElementById("addReadingBtn").addEventListener("click", () => withBusy(async () => {
     const x = document.getElementById("rx").value, y = document.getElementById("ry").value,
-          z = document.getElementById("rz").value, band = document.getElementById("rband").value;
+          z = document.getElementById("rz").value, band = document.getElementById("rband").value,
+          realY = document.getElementById("rRealY").value;
     if (x === "" || y === "" || z === "") { flashMsg("addReadingMsg", "Enter X, Y and Z.", "warn"); return; }
-    const outcome = await runCommand(`${x} ${y} ${z} ${band}`);
+    const cmd = realY === "" ? `${x} ${y} ${z} ${band}` : `${x} ${y} ${z} ${band} ${realY}`;
+    const outcome = await runCommand(cmd);
     const ok = outcome.startsWith("reading");
     flashMsg("addReadingMsg", outcome, ok ? "good" : "warn");
     if (ok) {
       document.getElementById("rx").value = ""; document.getElementById("ry").value = ""; document.getElementById("rz").value = "";
+      document.getElementById("rRealY").value = "";
       document.getElementById("rx").focus();
     }
   }));
