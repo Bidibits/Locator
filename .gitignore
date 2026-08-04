@@ -25,3 +25,6 @@ packages/
 *.pdb
 *.cache
 *.tmp
+
+# Auto-generated per-machine dev server config (random localhost port)
+Properties/launchSettings.json
